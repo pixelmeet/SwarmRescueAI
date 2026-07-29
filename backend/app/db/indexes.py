@@ -1,17 +1,26 @@
-from app.db.mongo import get_database
 import logging
+from motor.motor_asyncio import AsyncIOMotorDatabase
 
 logger = logging.getLogger("uvicorn")
 
-async def create_geospatial_indexes():
-    db = get_database()
-    # 2dsphere index setup placeholder for requests, teams, ambulances, hospitals, volunteers
-    try:
-        await db.requests.create_index([("location", "2dsphere")])
-        await db.teams.create_index([("location", "2dsphere")])
-        await db.ambulances.create_index([("location", "2dsphere")])
-        await db.hospitals.create_index([("location", "2dsphere")])
-        await db.volunteers.create_index([("location", "2dsphere")])
-        logger.info("2dsphere geospatial indexes established successfully.")
-    except Exception as e:
-        logger.warning(f"Could not create 2dsphere indexes (MongoDB may be offline): {e}")
+TARGET_COLLECTIONS = [
+    "rescue_teams",
+    "ambulances",
+    "hospitals",
+    "volunteers",
+    "emergency_requests",
+]
+
+async def ensure_indexes(db: AsyncIOMotorDatabase):
+    """
+    Creates a 2dsphere index on the `location` field for all required collections.
+    """
+    logger.info("Initializing 2dsphere geospatial indexes across collections...")
+    for collection_name in TARGET_COLLECTIONS:
+        try:
+            collection = db[collection_name]
+            index_name = await collection.create_index([("location", "2dsphere")])
+            logger.info(f"2dsphere index '{index_name}' successfully ensured on collection '{collection_name}'.")
+        except Exception as e:
+            logger.error(f"Failed to create 2dsphere index on collection '{collection_name}': {e}")
+            raise e

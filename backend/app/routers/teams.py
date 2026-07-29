@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.schemas.team import RescueTeamBase
+from app.schemas.team import RescueTeamCreate
 
 router = APIRouter()
 
@@ -8,5 +8,5 @@ async def list_rescue_teams():
     return {"teams": []}
 
 @router.post("/")
-async def create_rescue_team(team: RescueTeamBase):
+async def create_rescue_team(team: RescueTeamCreate):
     return {"message": "Team registered", "team": team.model_dump()}

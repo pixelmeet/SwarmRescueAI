@@ -1,11 +1,17 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
+from app.schemas.common import GeoJSONPoint
 
-class HospitalBase(BaseModel):
+class HospitalCreate(BaseModel):
     name: str
-    icu_beds_available: int
-    general_beds_available: int
-    latitude: float
-    longitude: float
+    location: GeoJSONPoint
+    total_beds: int
+    available_beds: int
+    phone: str
 
-class HospitalResponse(HospitalBase):
-    id: str
+class HospitalResponse(HospitalCreate):
+    id: str = Field(..., description="MongoDB string ID")
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True
+    )

@@ -1,6 +1,9 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
+from app.db.mongo import connect_to_mongo, close_mongo_connection, get_database
+from app.db.indexes import ensure_indexes
 from app.routers import (
     requests,
     teams,
@@ -11,10 +14,21 @@ from app.routers import (
     auth,
 )
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup lifecycle
+    await connect_to_mongo()
+    db = get_database()
+    await ensure_indexes(db)
+    yield
+    # Shutdown lifecycle
+    await close_mongo_connection()
+
 app = FastAPI(
     title="SwarmRescue AI Backend",
     description="Multi-Agent Emergency Triage and Response System API",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
