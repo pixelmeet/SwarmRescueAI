@@ -2,14 +2,206 @@
 @tailwindcss components;
 @tailwindcss utilities;
 
+/* =============================================
+   SwarmRescue AI — Design System Tokens
+   ============================================= */
+
 :root {
+  /* Core surfaces */
   --background: #0b0f19;
-  --foreground: #f3f4f6;
+  --foreground: #f1f5f9;
+  --surface-primary: #0f172a;
+  --surface-secondary: #1e293b;
+  --surface-elevated: #1e293b;
+  --border-primary: #334155;
+  --border-subtle: #1e293b;
+
+  /* Text hierarchy */
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-inverse: #0f172a;
+
+  /* Accent — Alert only (never decorative) */
+  --accent-alert: #ef4444;
+
+  /* Primary action */
+  --color-primary: #3b82f6;
+  --color-primary-hover: #2563eb;
+  --color-primary-muted: rgba(59, 130, 246, 0.15);
+
+  /* Severity palette */
+  --severity-critical: #dc2626;
+  --severity-critical-bg: rgba(220, 38, 38, 0.12);
+  --severity-critical-border: rgba(220, 38, 38, 0.3);
+  --severity-high: #f97316;
+  --severity-high-bg: rgba(249, 115, 22, 0.12);
+  --severity-high-border: rgba(249, 115, 22, 0.3);
+  --severity-medium: #eab308;
+  --severity-medium-bg: rgba(234, 179, 8, 0.12);
+  --severity-medium-border: rgba(234, 179, 8, 0.3);
+  --severity-low: #3b82f6;
+  --severity-low-bg: rgba(59, 130, 246, 0.12);
+  --severity-low-border: rgba(59, 130, 246, 0.3);
+
+  /* Status palette (resource availability) */
+  --status-available: #10b981;
+  --status-available-bg: rgba(16, 185, 129, 0.12);
+  --status-busy: #f59e0b;
+  --status-busy-bg: rgba(245, 158, 11, 0.12);
+  --status-offline: #64748b;
+  --status-offline-bg: rgba(100, 116, 139, 0.12);
+
+  /* Request status palette */
+  --status-pending: #f59e0b;
+  --status-assigned: #3b82f6;
+  --status-en-route: #6366f1;
+  --status-resolved: #10b981;
+
+  /* Functional colors */
+  --color-success: #10b981;
+  --color-success-bg: rgba(16, 185, 129, 0.12);
+  --color-warning: #f59e0b;
+  --color-warning-bg: rgba(245, 158, 11, 0.12);
+  --color-error: #ef4444;
+  --color-error-bg: rgba(239, 68, 68, 0.12);
+
+  /* Analytics accent */
+  --color-analytics: #8b5cf6;
+
+  /* Layout radii */
+  --radius-card: 12px;
+  --radius-button: 8px;
+  --radius-badge: 9999px;
+
+  /* Transition durations */
+  --transition-fast: 150ms;
+  --transition-normal: 200ms;
+  --transition-slow: 300ms;
 }
+
+/* =============================================
+   Base Styles
+   ============================================= */
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
   min-height: 100vh;
+}
+
+/* =============================================
+   Animation Keyframes
+   ============================================= */
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slide-in-top {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-in-bottom {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+  }
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.3);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* =============================================
+   Utility Classes
+   ============================================= */
+
+/* Telemetry / monospaced numbers — tabular figures prevent jitter on updates */
+.font-telemetry {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" on;
+}
+
+/* Dark-mode scrollbar styling */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--border-primary);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Glassmorphism surface */
+.glass {
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(51, 65, 85, 0.5);
+}
+
+/* Prevent Leaflet z-index conflicts with modal overlays */
+.leaflet-container {
+  z-index: 1;
 }

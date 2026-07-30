@@ -193,12 +193,14 @@ export function LocationPicker({ onLocationSelect, initialLocation }: LocationPi
         (error) => {
           console.warn("Geolocation warning:", error.message);
           setIsGeolocating(false);
-          setGeoStatus("Geolocation unavailable. Drag marker or click map to set location.");
+          setGeoStatus("Default location set. Drag marker or click map to adjust.");
+          handleLocationUpdate(DEFAULT_CENTER);
         },
         { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
       );
     } else {
-      setGeoStatus("Browser geolocation not supported. Click map to set location.");
+      setGeoStatus("Default location set. Click map to adjust location.");
+      handleLocationUpdate(DEFAULT_CENTER);
     }
   };
 

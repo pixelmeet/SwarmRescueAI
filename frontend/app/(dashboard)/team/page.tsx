@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { Suspense, useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   listAssignments,
@@ -26,7 +26,7 @@ interface UnifiedResource {
   kind: "rescue_team" | "ambulance" | "volunteer";
 }
 
-export default function TeamDashboardPage() {
+function TeamDashboardContent() {
   const searchParams = useSearchParams();
   const initialResourceId = searchParams.get("resource_id") || "";
 
@@ -302,5 +302,19 @@ export default function TeamDashboardPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function TeamDashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400 text-sm">
+          Loading responder portal...
+        </div>
+      }
+    >
+      <TeamDashboardContent />
+    </Suspense>
   );
 }
