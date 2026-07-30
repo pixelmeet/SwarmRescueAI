@@ -46,6 +46,10 @@ export interface RecommendationCandidate {
   distance_km: number;
   score: number;
   eta_minutes: number | null;
+  route_geometry?: {
+    type: "LineString";
+    coordinates: [number, number][];
+  } | null;
 }
 
 export interface RequestRecommendations {

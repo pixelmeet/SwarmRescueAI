@@ -1,9 +1,11 @@
+import asyncio
 import logging
 from typing import Dict, List, Any
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from app.services.routing import get_route
 
 logger = logging.getLogger("uvicorn")
 
@@ -41,6 +43,8 @@ async def find_best_matches(db: AsyncIOMotorDatabase, request_id: str) -> Dict[s
     Uses MongoDB $geoNear aggregation and a weighted scoring formula:
       score = (w1 * (1 / (1 + distance_km))) + (w2 * severity_weight) + (w3 * skill_match_ratio)
       w1 = 0.5, w2 = 0.3, w3 = 0.2
+    
+    For the top 1-2 candidates per category, computes driving ETA (minutes) and route geometry via OSRM.
     """
     obj_id = parse_object_id(request_id)
     request_doc = await db["emergency_requests"].find_one({"_id": obj_id})
@@ -56,6 +60,9 @@ async def find_best_matches(db: AsyncIOMotorDatabase, request_id: str) -> Dict[s
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Emergency request '{request_id}' missing valid location coordinates"
         )
+
+    req_coords = req_location.get("coordinates", [0.0, 0.0])
+    req_lat, req_lng = req_coords[1], req_coords[0]
 
     category = str(request_doc.get("category", "other")).lower()
     severity = str(request_doc.get("severity", "medium")).lower()
@@ -107,9 +114,10 @@ async def find_best_matches(db: AsyncIOMotorDatabase, request_id: str) -> Dict[s
     if not volunteer_docs:
         volunteer_docs = await get_geo_candidates("volunteers", {"status": "available"})
 
-    # Function to rank and structure docs
-    def rank_candidates(docs: List[dict], is_volunteer: bool = False, collection_type: str = "") -> List[dict]:
+    # Function to rank, structure, and route docs
+    async def rank_candidates(docs: List[dict], is_volunteer: bool = False, collection_type: str = "") -> List[dict]:
         ranked = []
+        doc_map = {}
         for doc in docs:
             dist_meters = doc.get("distance_meters", 0.0)
             dist_km = dist_meters / 1000.0
@@ -133,21 +141,46 @@ async def find_best_matches(db: AsyncIOMotorDatabase, request_id: str) -> Dict[s
             else:
                 name = doc.get("name", "Unknown Resource")
 
-            ranked.append({
-                "resource_id": str(doc["_id"]),
+            res_id = str(doc["_id"])
+            cand_dict = {
+                "resource_id": res_id,
                 "name": name,
                 "distance_km": round(dist_km, 2),
                 "score": round(score, 4),
-                "eta_minutes": None
-            })
+                "eta_minutes": None,
+                "route_geometry": None
+            }
+            ranked.append(cand_dict)
+            doc_map[res_id] = doc
 
         # Sort by score descending
         ranked.sort(key=lambda x: x["score"], reverse=True)
+
+        # For top 1-2 ranked candidates per resource type, calculate OSRM driving route & ETA
+        top_candidates = ranked[:2]
+        for cand in top_candidates:
+            orig_doc = doc_map.get(cand["resource_id"])
+            if orig_doc and "location" in orig_doc and "coordinates" in orig_doc["location"]:
+                c_coords = orig_doc["location"]["coordinates"]
+                c_lat, c_lng = c_coords[1], c_coords[0]
+                route_data = await get_route(origin=(c_lat, c_lng), destination=(req_lat, req_lng))
+                cand["eta_minutes"] = route_data["duration_minutes"]
+                cand["route_geometry"] = route_data["geometry"]
+                if route_data.get("distance_km") is not None:
+                    cand["distance_km"] = route_data["distance_km"]
+
         return ranked
 
+    rescue_teams, ambulances, hospitals, volunteers = await asyncio.gather(
+        rank_candidates(rescue_team_docs, is_volunteer=False, collection_type="rescue_team"),
+        rank_candidates(ambulance_docs, is_volunteer=False, collection_type="ambulance"),
+        rank_candidates(hospital_docs, is_volunteer=False, collection_type="hospital"),
+        rank_candidates(volunteer_docs, is_volunteer=True, collection_type="volunteer")
+    )
+
     return {
-        "rescue_teams": rank_candidates(rescue_team_docs, is_volunteer=False, collection_type="rescue_team"),
-        "ambulances": rank_candidates(ambulance_docs, is_volunteer=False, collection_type="ambulance"),
-        "hospitals": rank_candidates(hospital_docs, is_volunteer=False, collection_type="hospital"),
-        "volunteers": rank_candidates(volunteer_docs, is_volunteer=True, collection_type="volunteer"),
+        "rescue_teams": rescue_teams,
+        "ambulances": ambulances,
+        "hospitals": hospitals,
+        "volunteers": volunteers,
     }

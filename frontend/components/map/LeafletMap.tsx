@@ -6,11 +6,13 @@ import "leaflet/dist/leaflet.css";
 import {
   EmergencyRequestResponse,
   RequestRecommendations,
+  RecommendationCandidate,
   RescueTeam,
   Ambulance,
   Hospital,
   Volunteer,
 } from "@/lib/api";
+import { RouteLine } from "./RouteLine";
 
 export interface LeafletMapProps {
   teams?: RescueTeam[];
@@ -171,61 +173,38 @@ const LeafletMapInner = dynamic(
         ? geoToLatLng(selectedRequest.location.coordinates)
         : null;
 
-      const topCandidateLines: Array<{ id: string; label: string; coords: [[number, number], [number, number]] }> = [];
+      const topCandidateRoutes: Array<{
+        id: string;
+        label: string;
+        geometry?: { type: "LineString"; coordinates: [number, number][] } | null;
+        fallbackCoords: [number, number][];
+      }> = [];
       const topCandidateIds = new Set<string>();
 
       if (selectedReqCoords && recommendations) {
-        const topTeam = recommendations.rescue_teams?.[0];
-        if (topTeam) {
-          topCandidateIds.add(topTeam.resource_id);
-          const match = teams.find((t) => t.id === topTeam.resource_id);
-          if (match) {
-            topCandidateLines.push({
-              id: topTeam.resource_id,
-              label: `Team: ${topTeam.name}`,
-              coords: [selectedReqCoords, geoToLatLng(match.location.coordinates)],
-            });
-          }
-        }
+        const addCategoryRoutes = (
+          candidates: RecommendationCandidate[] = [],
+          resources: Array<{ id: string; location: { coordinates: [number, number] } }>,
+          labelPrefix: string
+        ) => {
+          candidates.slice(0, 2).forEach((cand) => {
+            topCandidateIds.add(cand.resource_id);
+            const match = resources.find((r) => r.id === cand.resource_id);
+            if (match) {
+              topCandidateRoutes.push({
+                id: cand.resource_id,
+                label: `${labelPrefix}: ${cand.name}`,
+                geometry: cand.route_geometry,
+                fallbackCoords: [selectedReqCoords, geoToLatLng(match.location.coordinates)],
+              });
+            }
+          });
+        };
 
-        const topAmb = recommendations.ambulances?.[0];
-        if (topAmb) {
-          topCandidateIds.add(topAmb.resource_id);
-          const match = ambulances.find((a) => a.id === topAmb.resource_id);
-          if (match) {
-            topCandidateLines.push({
-              id: topAmb.resource_id,
-              label: `Ambulance: ${topAmb.name}`,
-              coords: [selectedReqCoords, geoToLatLng(match.location.coordinates)],
-            });
-          }
-        }
-
-        const topHosp = recommendations.hospitals?.[0];
-        if (topHosp) {
-          topCandidateIds.add(topHosp.resource_id);
-          const match = hospitals.find((h) => h.id === topHosp.resource_id);
-          if (match) {
-            topCandidateLines.push({
-              id: topHosp.resource_id,
-              label: `Hospital: ${topHosp.name}`,
-              coords: [selectedReqCoords, geoToLatLng(match.location.coordinates)],
-            });
-          }
-        }
-
-        const topVol = recommendations.volunteers?.[0];
-        if (topVol) {
-          topCandidateIds.add(topVol.resource_id);
-          const match = volunteers.find((v) => v.id === topVol.resource_id);
-          if (match) {
-            topCandidateLines.push({
-              id: topVol.resource_id,
-              label: `Volunteer: ${topVol.name}`,
-              coords: [selectedReqCoords, geoToLatLng(match.location.coordinates)],
-            });
-          }
-        }
+        addCategoryRoutes(recommendations.rescue_teams, teams, "Team");
+        addCategoryRoutes(recommendations.ambulances, ambulances, "Ambulance");
+        addCategoryRoutes(recommendations.hospitals, hospitals, "Hospital");
+        addCategoryRoutes(recommendations.volunteers, volunteers, "Volunteer");
       }
 
       // Map center priority: Selected Request position > explicit center prop > default
@@ -245,17 +224,15 @@ const LeafletMapInner = dynamic(
             />
             <MapController centerPos={activeCenter} />
 
-            {/* Connecting lines from selected request to top recommended candidates */}
-            {topCandidateLines.map((line) => (
-              <Polyline
-                key={line.id}
-                positions={line.coords}
-                pathOptions={{
-                  color: "#eab308", // Golden Yellow
-                  weight: 3,
-                  dashArray: "8, 8",
-                  opacity: 0.95,
-                }}
+            {/* Connecting OSRM road routes from selected request to top recommended candidates */}
+            {topCandidateRoutes.map((route) => (
+              <RouteLine
+                key={`route-${route.id}`}
+                geometry={route.geometry}
+                fallbackPositions={route.fallbackCoords}
+                color="#eab308"
+                weight={4}
+                opacity={0.9}
               />
             ))}
 

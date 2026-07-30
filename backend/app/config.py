@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "placeholder_jwt_secret"
     NEXTJS_NOTIFY_URL: str = "http://localhost:3000/api/notify"
     INTERNAL_API_SECRET: str = "placeholder_secret"
-    OSRM_BASE_URL: str = "http://router.project-osrm.org"
+    OSRM_BASE_URL: str = "https://router.project-osrm.org"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
