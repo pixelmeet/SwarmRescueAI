@@ -1,3 +1,4 @@
+import asyncio
 from typing import List, Optional
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, status, Query
@@ -9,6 +10,7 @@ from pydantic import BaseModel
 from app.db.mongo import get_database
 from app.services.scoring_engine import find_best_matches
 from app.services.severity_classifier import classify_emergency
+from app.services.notify import send_notification
 from app.schemas.request import (
     EmergencyRequestCreate,
     EmergencyRequestUpdate,
@@ -70,6 +72,28 @@ async def create_emergency_request(request_payload: EmergencyRequestCreate):
     req_dict["created_at"] = datetime.utcnow()
     result = await db[COLLECTION_NAME].insert_one(req_dict)
     created_doc = await db[COLLECTION_NAME].find_one({"_id": result.inserted_id})
+
+    # Send non-blocking confirmation email to reporter if email exists
+    reporter_email = created_doc.get("reporter_email")
+    if reporter_email:
+        req_id_str = str(created_doc.get("_id", ""))
+        reporter_name = created_doc.get("reporter_name", "Citizen")
+        severity = created_doc.get("severity", "medium")
+        category = created_doc.get("category", "other")
+        description = created_doc.get("description", "")
+
+        subject = f"[SwarmRescue AI] Emergency Request Confirmation - ID: {req_id_str}"
+        text = (
+            f"Hello {reporter_name},\n\n"
+            f"Your emergency request has been received by SwarmRescue AI.\n\n"
+            f"Request ID: {req_id_str}\n"
+            f"Classified Severity: {severity}\n"
+            f"Category: {category}\n"
+            f"Description: {description}\n\n"
+            f"Our rescue teams have been notified and are processing your request."
+        )
+        asyncio.create_task(send_notification(to=reporter_email, subject=subject, text=text))
+
     return format_request(created_doc)
 
 @router.get("/", response_model=List[EmergencyRequestResponse])
@@ -133,6 +157,21 @@ async def update_emergency_request(id: str, payload: EmergencyRequestUpdate):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Emergency request with id '{id}' not found"
         )
+
+    # Send closure email if status updated to "resolved"
+    if updated_doc.get("status") == "resolved":
+        reporter_email = updated_doc.get("reporter_email")
+        if reporter_email:
+            req_id_str = str(updated_doc.get("_id", id))
+            reporter_name = updated_doc.get("reporter_name", "Citizen")
+            subject = f"[SwarmRescue AI] Emergency Request Resolved - ID: {req_id_str}"
+            text = (
+                f"Hello {reporter_name},\n\n"
+                f"Your emergency request (ID: {req_id_str}) has been marked as RESOLVED.\n\n"
+                f"Thank you for using SwarmRescue AI."
+            )
+            asyncio.create_task(send_notification(to=reporter_email, subject=subject, text=text))
+
     return format_request(updated_doc)
 
 @router.delete("/{id}")

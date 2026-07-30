@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 from enum import Enum
 from fastapi import APIRouter, HTTPException, status
@@ -5,6 +6,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 
 from app.db.mongo import get_database
+from app.services.notify import send_notification
 from app.schemas.assignment import (
     AssignmentCreate,
     AssignmentResponse,
@@ -101,6 +103,27 @@ async def create_assignment(payload: AssignmentCreate):
 
     # 5. Flip emergency request status to "assigned"
     await db["emergency_requests"].update_one({"_id": req_obj_id}, {"$set": {"status": "assigned"}})
+
+    # 6. Send notification email to assigned resource if email exists
+    resource_email = res_doc.get("email") or res_doc.get("contact_email") or res_doc.get("driver_email")
+    if resource_email:
+        req_id_str = payload.request_id
+        req_desc = req_doc.get("description", "N/A")
+        req_loc = req_doc.get("location", {})
+        coords = req_loc.get("coordinates", []) if isinstance(req_loc, dict) else []
+        loc_str = f"Coordinates {coords}" if coords else "Emergency location"
+
+        subject = f"[SwarmRescue AI] New Emergency Assignment - Request ID: {req_id_str}"
+        text = (
+            f"You have been assigned to an emergency request.\n\n"
+            f"Request ID: {req_id_str}\n"
+            f"Resource Type: {resource_type_str}\n"
+            f"Location: {loc_str}\n"
+            f"Description: {req_desc}\n"
+            f"ETA: {payload.eta_minutes} minutes\n\n"
+            f"Please respond as soon as possible."
+        )
+        asyncio.create_task(send_notification(to=resource_email, subject=subject, text=text))
 
     return assignment_doc
 
