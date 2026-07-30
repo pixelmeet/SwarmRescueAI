@@ -4,6 +4,11 @@ export type Severity = "low" | "medium" | "high" | "critical";
 export type Category = "fire" | "medical" | "trapped" | "flood" | "other";
 export type RequestStatus = "pending" | "assigned" | "en_route" | "resolved";
 
+export type ResourceType = "rescue_team" | "ambulance" | "hospital" | "volunteer";
+export type AssignmentStatus = "assigned" | "en_route" | "completed" | "cancelled";
+export type ResourceStatus = "available" | "busy" | "offline";
+export type TeamType = "fire" | "police" | "medical" | "general";
+
 export interface GeoJSONPoint {
   type: "Point";
   coordinates: [number, number]; // [longitude, latitude]
@@ -35,6 +40,74 @@ export interface EmergencyRequestResponse {
   created_at: string;
 }
 
+export interface RecommendationMatch {
+  resource_id: string;
+  resource_name: string;
+  resource_type: ResourceType;
+  composite_score: number;
+  distance_km: number;
+  eta_minutes: number;
+  skill_match_ratio: number;
+  breakdown: {
+    distance_score: number;
+    skill_score: number;
+    availability_score: number;
+  };
+}
+
+export interface AssignmentCreate {
+  request_id: string;
+  resource_type: ResourceType;
+  resource_id: string;
+  eta_minutes?: number;
+  status?: AssignmentStatus;
+}
+
+export interface AssignmentResponse {
+  id: string;
+  request_id: string;
+  resource_type: ResourceType;
+  resource_id: string;
+  eta_minutes?: number;
+  status: AssignmentStatus;
+  assigned_at: string;
+}
+
+export interface RescueTeam {
+  id: string;
+  name: string;
+  type: TeamType;
+  location: GeoJSONPoint;
+  status: ResourceStatus;
+  skills: string[];
+}
+
+export interface Ambulance {
+  id: string;
+  driver_name: string;
+  location: GeoJSONPoint;
+  status: ResourceStatus;
+  plate_number: string;
+}
+
+export interface Hospital {
+  id: string;
+  name: string;
+  location: GeoJSONPoint;
+  total_beds: number;
+  available_beds: number;
+  phone: string;
+}
+
+export interface Volunteer {
+  id: string;
+  name: string;
+  email: string;
+  location: GeoJSONPoint;
+  skills: string[];
+  status: ResourceStatus;
+}
+
 export async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = endpoint.startsWith("http") ? endpoint : `${API_BASE_URL}${endpoint}`;
   const res = await fetch(url, {
@@ -57,7 +130,7 @@ export async function fetchApi<T>(endpoint: string, options?: RequestInit): Prom
         }
       }
     } catch {
-      // JSON parse failed, use status string
+      // Ignore json parse error
     }
     throw new Error(errorMessage);
   }
@@ -65,9 +138,8 @@ export async function fetchApi<T>(endpoint: string, options?: RequestInit): Prom
   return res.json();
 }
 
-/**
- * Creates a new emergency request.
- */
+/* ==================== EMERGENCY REQUESTS ==================== */
+
 export async function createRequest(data: EmergencyRequestCreate): Promise<EmergencyRequestResponse> {
   return fetchApi<EmergencyRequestResponse>("/api/requests", {
     method: "POST",
@@ -75,16 +147,10 @@ export async function createRequest(data: EmergencyRequestCreate): Promise<Emerg
   });
 }
 
-/**
- * Fetches a single emergency request by ID.
- */
 export async function getRequest(id: string): Promise<EmergencyRequestResponse> {
   return fetchApi<EmergencyRequestResponse>(`/api/requests/${id}`);
 }
 
-/**
- * Lists emergency requests with optional filters.
- */
 export async function listRequests(filters?: {
   status?: RequestStatus;
   severity?: Severity;
@@ -96,6 +162,66 @@ export async function listRequests(filters?: {
   if (filters?.category) query.append("category", filters.category);
 
   const queryString = query.toString();
-  const endpoint = `/api/requests${queryString ? `?${queryString}` : ""}`;
-  return fetchApi<EmergencyRequestResponse[]>(endpoint);
+  return fetchApi<EmergencyRequestResponse[]>(`/api/requests${queryString ? `?${queryString}` : ""}`);
+}
+
+export async function getRequestRecommendations(id: string): Promise<RecommendationMatch[]> {
+  return fetchApi<RecommendationMatch[]>(`/api/requests/${id}/recommendations`);
+}
+
+/* ==================== ASSIGNMENTS ==================== */
+
+export async function createAssignment(data: AssignmentCreate): Promise<AssignmentResponse> {
+  return fetchApi<AssignmentResponse>("/api/assignments", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function autoAssign(): Promise<{ message: string; assignments: AssignmentResponse[] }> {
+  return fetchApi<{ message: string; assignments: AssignmentResponse[] }>("/api/assignments/auto-assign", {
+    method: "POST",
+  });
+}
+
+export async function manualOverrideAssignment(data: AssignmentCreate): Promise<{ message: string; assignment: AssignmentCreate }> {
+  return fetchApi<{ message: string; assignment: AssignmentCreate }>("/api/assignments/manual-override", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+/* ==================== RESOURCES ==================== */
+
+export async function listTeams(status?: ResourceStatus): Promise<RescueTeam[]> {
+  const query = status ? `?status=${status}` : "";
+  return fetchApi<RescueTeam[]>(`/api/teams${query}`);
+}
+
+export async function listAmbulances(status?: ResourceStatus): Promise<Ambulance[]> {
+  const query = status ? `?status=${status}` : "";
+  return fetchApi<Ambulance[]>(`/api/ambulances${query}`);
+}
+
+export async function listHospitals(): Promise<Hospital[]> {
+  return fetchApi<Hospital[]>("/api/hospitals");
+}
+
+export async function listVolunteers(status?: ResourceStatus): Promise<Volunteer[]> {
+  const query = status ? `?status=${status}` : "";
+  return fetchApi<Volunteer[]>(`/api/volunteers${query}`);
+}
+
+/* ==================== CLASSIFICATION TEST ==================== */
+
+export async function classifyTest(description: string): Promise<{
+  severity: Severity;
+  category: Category;
+  required_skills: string[];
+  reasoning: string;
+}> {
+  return fetchApi("/api/classify-test", {
+    method: "POST",
+    body: JSON.stringify({ description }),
+  });
 }

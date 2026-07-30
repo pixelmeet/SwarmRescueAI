@@ -48,20 +48,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include API routers under /api and /api/v1
+# Include API routers under /api prefix
 app.include_router(requests.router, prefix="/api/requests", tags=["Requests"])
 app.include_router(teams.router, prefix="/api/teams", tags=["Teams"])
 app.include_router(ambulances.router, prefix="/api/ambulances", tags=["Ambulances"])
 app.include_router(hospitals.router, prefix="/api/hospitals", tags=["Hospitals"])
 app.include_router(volunteers.router, prefix="/api/volunteers", tags=["Volunteers"])
 app.include_router(assignments.router, prefix="/api/assignments", tags=["Assignments"])
-
-app.include_router(requests.router, prefix="/api/v1/requests", tags=["Requests (v1)"])
-app.include_router(teams.router, prefix="/api/v1/teams", tags=["Teams (v1)"])
-app.include_router(ambulances.router, prefix="/api/v1/ambulances", tags=["Ambulances (v1)"])
-app.include_router(hospitals.router, prefix="/api/v1/hospitals", tags=["Hospitals (v1)"])
-app.include_router(volunteers.router, prefix="/api/v1/volunteers", tags=["Volunteers (v1)"])
-app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
+app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 
 from pydantic import BaseModel
 from app.services.severity_classifier import classify_emergency
@@ -70,7 +64,6 @@ class StandaloneClassifyTestInput(BaseModel):
     description: str
 
 @app.post("/api/classify-test", tags=["Classification"])
-@app.post("/api/v1/classify-test", tags=["Classification"])
 async def classify_test_direct(payload: StandaloneClassifyTestInput):
     return await classify_emergency(payload.description)
 
