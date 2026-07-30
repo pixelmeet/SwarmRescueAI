@@ -61,8 +61,18 @@ app.include_router(teams.router, prefix="/api/v1/teams", tags=["Teams (v1)"])
 app.include_router(ambulances.router, prefix="/api/v1/ambulances", tags=["Ambulances (v1)"])
 app.include_router(hospitals.router, prefix="/api/v1/hospitals", tags=["Hospitals (v1)"])
 app.include_router(volunteers.router, prefix="/api/v1/volunteers", tags=["Volunteers (v1)"])
-app.include_router(assignments.router, prefix="/api/v1/assignments", tags=["Assignments"])
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
+
+from pydantic import BaseModel
+from app.services.severity_classifier import classify_emergency
+
+class StandaloneClassifyTestInput(BaseModel):
+    description: str
+
+@app.post("/api/classify-test", tags=["Classification"])
+@app.post("/api/v1/classify-test", tags=["Classification"])
+async def classify_test_direct(payload: StandaloneClassifyTestInput):
+    return await classify_emergency(payload.description)
 
 @app.get("/")
 async def root():

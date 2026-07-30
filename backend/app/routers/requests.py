@@ -5,18 +5,25 @@ from pymongo import ReturnDocument
 from bson import ObjectId
 from bson.errors import InvalidId
 
+from pydantic import BaseModel
 from app.db.mongo import get_database
 from app.services.scoring_engine import find_best_matches
+from app.services.severity_classifier import classify_emergency
 from app.schemas.request import (
     EmergencyRequestCreate,
     EmergencyRequestUpdate,
     EmergencyRequestResponse,
     RequestStatusEnum,
+    SeverityEnum,
+    CategoryEnum,
 )
 
 router = APIRouter()
 
 COLLECTION_NAME = "emergency_requests"
+
+class ClassifyTestInput(BaseModel):
+    description: str
 
 def parse_object_id(id_str: str) -> ObjectId:
     try:
@@ -33,10 +40,33 @@ def format_request(doc: dict) -> dict:
         del doc["_id"]
     return doc
 
+@router.post("/classify-test")
+async def classify_test_endpoint(payload: ClassifyTestInput):
+    return await classify_emergency(payload.description)
+
 @router.post("/", response_model=EmergencyRequestResponse, status_code=status.HTTP_201_CREATED)
 async def create_emergency_request(request_payload: EmergencyRequestCreate):
     db = get_database()
     req_dict = request_payload.model_dump()
+
+    if req_dict.get("severity") is None or req_dict.get("category") is None:
+        classification = await classify_emergency(request_payload.description)
+        if req_dict.get("severity") is None:
+            req_dict["severity"] = classification["severity"]
+        if req_dict.get("category") is None:
+            req_dict["category"] = classification["category"]
+        if not req_dict.get("required_skills"):
+            req_dict["required_skills"] = classification.get("required_skills", [])
+        if req_dict.get("reasoning") is None:
+            req_dict["reasoning"] = classification.get("reasoning", "")
+
+    if isinstance(req_dict.get("severity"), SeverityEnum):
+        req_dict["severity"] = req_dict["severity"].value
+    if isinstance(req_dict.get("category"), CategoryEnum):
+        req_dict["category"] = req_dict["category"].value
+    if isinstance(req_dict.get("status"), RequestStatusEnum):
+        req_dict["status"] = req_dict["status"].value
+
     req_dict["created_at"] = datetime.utcnow()
     result = await db[COLLECTION_NAME].insert_one(req_dict)
     created_doc = await db[COLLECTION_NAME].find_one({"_id": result.inserted_id})

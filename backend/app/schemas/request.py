@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from enum import Enum
 from app.schemas.common import GeoJSONPoint
@@ -26,11 +26,13 @@ class RequestStatusEnum(str, Enum):
 class EmergencyRequestCreate(BaseModel):
     description: str
     location: GeoJSONPoint
-    severity: SeverityEnum = SeverityEnum.MEDIUM
-    category: CategoryEnum = CategoryEnum.OTHER
+    severity: Optional[SeverityEnum] = None
+    category: Optional[CategoryEnum] = None
     status: RequestStatusEnum = RequestStatusEnum.PENDING
     reporter_email: str
     reporter_name: str
+    required_skills: Optional[List[str]] = Field(default_factory=list)
+    reasoning: Optional[str] = None
 
 class EmergencyRequestUpdate(BaseModel):
     description: Optional[str] = None
@@ -40,9 +42,20 @@ class EmergencyRequestUpdate(BaseModel):
     status: Optional[RequestStatusEnum] = None
     reporter_email: Optional[str] = None
     reporter_name: Optional[str] = None
+    required_skills: Optional[List[str]] = None
+    reasoning: Optional[str] = None
 
-class EmergencyRequestResponse(EmergencyRequestCreate):
+class EmergencyRequestResponse(BaseModel):
     id: str = Field(..., description="MongoDB string ID")
+    description: str
+    location: GeoJSONPoint
+    severity: SeverityEnum = SeverityEnum.MEDIUM
+    category: CategoryEnum = CategoryEnum.OTHER
+    status: RequestStatusEnum = RequestStatusEnum.PENDING
+    reporter_email: str
+    reporter_name: str
+    required_skills: List[str] = Field(default_factory=list)
+    reasoning: Optional[str] = ""
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     model_config = ConfigDict(
