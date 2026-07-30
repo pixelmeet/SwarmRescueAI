@@ -14,6 +14,7 @@ from app.routers import (
     volunteers,
     assignments,
     auth,
+    analytics,
 )
 
 logger = logging.getLogger("uvicorn")
@@ -57,6 +58,8 @@ app.include_router(hospitals.router, prefix="/api/hospitals", tags=["Hospitals"]
 app.include_router(volunteers.router, prefix="/api/volunteers", tags=["Volunteers"])
 app.include_router(assignments.router, prefix="/api/assignments", tags=["Assignments"])
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
+app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
+
 
 from pydantic import BaseModel
 from app.services.severity_classifier import classify_emergency

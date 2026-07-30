@@ -112,14 +112,52 @@ export interface Volunteer {
   status: ResourceStatus;
 }
 
+export interface AnalyticsData {
+  total_requests: number;
+  resolved_requests: number;
+  avg_time_creation_to_assignment: number;
+  avg_time_assignment_to_resolution: number;
+  request_count_by_category: Record<Category | string, number>;
+  request_count_by_severity: Record<Severity | string, number>;
+  resource_utilization_pct: number;
+  active_resources_count: number;
+}
+
+// Note: In production applications, JWT should be stored in httpOnly, SameSite=Strict cookies to mitigate XSS vulnerabilities.
+// For demo/student project scope, localStorage is used here.
+export function getAdminToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("admin_token");
+}
+
+export function setAdminToken(token: string) {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("admin_token", token);
+  }
+}
+
+export function removeAdminToken() {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("admin_token");
+  }
+}
+
 export async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = endpoint.startsWith("http") ? endpoint : `${API_BASE_URL}${endpoint}`;
+  const token = getAdminToken();
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options?.headers as Record<string, string>),
+  };
+
+  if (token && !headers["Authorization"]) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const res = await fetch(url, {
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
     ...options,
+    headers,
   });
 
   if (!res.ok) {
@@ -140,6 +178,19 @@ export async function fetchApi<T>(endpoint: string, options?: RequestInit): Prom
   }
 
   return res.json();
+}
+
+/* ==================== AUTHENTICATION ==================== */
+
+export async function loginAdmin(credentials: { username: string; password: string }): Promise<{ access_token: string; token_type: string }> {
+  const res = await fetchApi<{ access_token: string; token_type: string }>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify(credentials),
+  });
+  if (res.access_token) {
+    setAdminToken(res.access_token);
+  }
+  return res;
 }
 
 /* ==================== EMERGENCY REQUESTS ==================== */
@@ -175,10 +226,26 @@ export async function getRequestRecommendations(id: string): Promise<RequestReco
 
 /* ==================== ASSIGNMENTS ==================== */
 
+export async function listAssignments(resourceId?: string, status?: AssignmentStatus): Promise<AssignmentResponse[]> {
+  const query = new URLSearchParams();
+  if (resourceId) query.append("resource_id", resourceId);
+  if (status) query.append("status", status);
+
+  const queryString = query.toString();
+  return fetchApi<AssignmentResponse[]>(`/api/assignments${queryString ? `?${queryString}` : ""}`);
+}
+
 export async function createAssignment(data: AssignmentCreate): Promise<AssignmentResponse> {
   return fetchApi<AssignmentResponse>("/api/assignments", {
     method: "POST",
     body: JSON.stringify(data),
+  });
+}
+
+export async function updateAssignmentStatus(id: string, status: AssignmentStatus): Promise<AssignmentResponse> {
+  return fetchApi<AssignmentResponse>(`/api/assignments/${id}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
   });
 }
 
@@ -214,6 +281,12 @@ export async function listHospitals(): Promise<Hospital[]> {
 export async function listVolunteers(status?: ResourceStatus): Promise<Volunteer[]> {
   const query = status ? `?status=${status}` : "";
   return fetchApi<Volunteer[]>(`/api/volunteers${query}`);
+}
+
+/* ==================== ANALYTICS ==================== */
+
+export async function getAnalytics(): Promise<AnalyticsData> {
+  return fetchApi<AnalyticsData>("/api/analytics");
 }
 
 /* ==================== CLASSIFICATION TEST ==================== */

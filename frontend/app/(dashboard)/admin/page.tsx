@@ -22,6 +22,9 @@ import {
   listAmbulances,
   listHospitals,
   listVolunteers,
+  getAdminToken,
+  removeAdminToken,
+  loginAdmin,
 } from "@/lib/api";
 
 const EMPTY_RECOMMENDATIONS: RequestRecommendations = {
@@ -34,6 +37,15 @@ const EMPTY_RECOMMENDATIONS: RequestRecommendations = {
 const POLLING_INTERVAL_MS = 10000; // 10 seconds polling fallback
 
 export default function AdminDashboardPage() {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [checkingAuth, setCheckingAuth] = useState<boolean>(true);
+
+  // Login form state
+  const [usernameInput, setUsernameInput] = useState<string>("admin");
+  const [passwordInput, setPasswordInput] = useState<string>("adminpass");
+  const [loggingIn, setLoggingIn] = useState<boolean>(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+
   const [requests, setRequests] = useState<EmergencyRequestResponse[]>([]);
   const [loadingRequests, setLoadingRequests] = useState<boolean>(true);
   const [selectedRequest, setSelectedRequest] = useState<EmergencyRequestResponse | null>(null);
@@ -55,6 +67,15 @@ export default function AdminDashboardPage() {
   const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
   const [activeTab, setActiveTab] = useState<"teams" | "ambulances" | "hospitals" | "volunteers">("teams");
 
+  // Verify auth on client load
+  useEffect(() => {
+    const token = getAdminToken();
+    if (token) {
+      setIsAuthenticated(true);
+    }
+    setCheckingAuth(false);
+  }, []);
+
   // Fetch all live dashboard data
   const refreshDashboardData = useCallback(async (isInitial = false) => {
     if (isInitial) setLoadingRequests(true);
@@ -74,7 +95,6 @@ export default function AdminDashboardPage() {
       setHospitals(hRes);
       setVolunteers(vRes);
 
-      // If a request is selected, update selectedRequest reference with fresh data
       if (selectedRequest) {
         const updated = reqRes.find((r) => r.id === selectedRequest.id);
         if (updated) {
@@ -88,15 +108,15 @@ export default function AdminDashboardPage() {
     }
   }, [selectedRequest]);
 
-  // Initial load & WebSocket connection setup
+  // Setup dashboard data & WebSocket subscription when authenticated
   useEffect(() => {
+    if (!isAuthenticated) return;
+
     refreshDashboardData(true);
 
-    // Connect WebSocket client
     socketClient.connect();
     const unsubStatus = socketClient.onStatusChange(setWsStatus);
 
-    // Subscribe to live WebSocket events
     const unsubNewReq = socketClient.subscribe("new_request", (data: EmergencyRequestResponse) => {
       setRequests((prev) => {
         const exists = prev.some((r) => r.id === data.id);
@@ -126,18 +146,42 @@ export default function AdminDashboardPage() {
       unsubResUpdate();
       socketClient.disconnect();
     };
-  }, []);
+  }, [isAuthenticated, refreshDashboardData]);
 
-  // Polling Fallback (Only active if WebSocket fails after max reconnections)
+  // Polling Fallback
   useEffect(() => {
-    if (wsStatus !== "fallback_polling") return;
+    if (!isAuthenticated || wsStatus !== "fallback_polling") return;
 
     const interval = setInterval(() => {
       refreshDashboardData(false);
     }, POLLING_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [wsStatus, refreshDashboardData]);
+  }, [isAuthenticated, wsStatus, refreshDashboardData]);
+
+  const handleLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoggingIn(true);
+    setLoginError(null);
+
+    try {
+      await loginAdmin({
+        username: usernameInput,
+        password: passwordInput,
+      });
+      setIsAuthenticated(true);
+    } catch (err) {
+      console.error("Login failed:", err);
+      setLoginError(err instanceof Error ? err.message : "Invalid credentials");
+    } finally {
+      setLoggingIn(false);
+    }
+  };
+
+  const handleLogout = () => {
+    removeAdminToken();
+    setIsAuthenticated(false);
+  };
 
   // Fetch recommendations whenever a request is selected
   const handleSelectRequest = async (req: EmergencyRequestResponse) => {
@@ -173,14 +217,12 @@ export default function AdminDashboardPage() {
       });
 
       setDispatchStatus(`Successfully assigned ${candidate.name} (${resourceType.replace("_", " ")}) — Assignment ID: ${res.id}`);
-      
-      // Optimistic state update
+
       setSelectedRequest({ ...selectedRequest, status: "assigned" });
       setRequests((prev) =>
         prev.map((r) => (r.id === selectedRequest.id ? { ...r, status: "assigned" } : r))
       );
 
-      // Trigger immediate backend data refresh
       await refreshDashboardData(false);
     } catch (err) {
       console.error("Dispatch error:", err);
@@ -190,10 +232,97 @@ export default function AdminDashboardPage() {
     }
   };
 
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400 text-sm">
+        Authenticating session...
+      </div>
+    );
+  }
+
+  // Unauthenticated Admin Login Screen
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl max-w-md w-full space-y-6">
+          <div className="text-center space-y-2">
+            <div className="w-12 h-12 bg-blue-600/20 border border-blue-500/30 rounded-2xl flex items-center justify-center mx-auto text-blue-400">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            </div>
+            <h2 className="text-2xl font-extrabold text-slate-100 tracking-tight">Admin Authentication</h2>
+            <p className="text-xs text-slate-400">Sign in to access SwarmRescue AI command center & resource dispatching.</p>
+          </div>
+
+          {loginError && (
+            <div className="p-3 bg-red-950/80 border border-red-800 rounded-xl text-xs text-red-300 font-medium flex items-center gap-2">
+              <svg className="w-4 h-4 shrink-0 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>{loginError}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleLoginSubmit} className="space-y-4 text-xs">
+            <div>
+              <label className="block text-slate-300 font-semibold mb-1">Username</label>
+              <input
+                type="text"
+                value={usernameInput}
+                onChange={(e) => setUsernameInput(e.target.value)}
+                required
+                placeholder="admin"
+                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:outline-none focus:border-blue-500 transition"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-300 font-semibold mb-1">Password</label>
+              <input
+                type="password"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                required
+                placeholder="••••••••"
+                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:outline-none focus:border-blue-500 transition"
+              />
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="submit"
+                disabled={loggingIn}
+                className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition shadow-lg shadow-blue-900/30 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {loggingIn ? (
+                  <>
+                    <svg className="w-4 h-4 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                    </svg>
+                    Signing In...
+                  </>
+                ) : (
+                  "Login to Admin Dashboard"
+                )}
+              </button>
+            </div>
+          </form>
+
+          <p className="text-[11px] text-slate-500 text-center">
+            Default credentials are configured in <code className="bg-slate-950 px-1 py-0.5 rounded text-slate-400">.env</code> file.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Authenticated Admin Dashboard
   return (
     <div className="p-4 md:p-6 space-y-6 bg-slate-950 min-h-screen text-slate-100 font-sans">
       {/* Header */}
-      <header className="flex justify-between items-center pb-4 border-b border-slate-800">
+      <header className="flex justify-between items-center pb-4 border-b border-slate-800 flex-wrap gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-extrabold text-blue-400 tracking-tight flex items-center gap-2.5">
             <svg className="w-8 h-8 text-blue-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -205,33 +334,47 @@ export default function AdminDashboardPage() {
             Real-time emergency queue, geospatial AI scoring recommendations & manual resource dispatch.
           </p>
         </div>
-        <div className="hidden sm:flex items-center gap-2 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl text-xs text-slate-300">
-          <span
-            className={`w-2.5 h-2.5 rounded-full ${
-              wsStatus === "connected"
-                ? "bg-emerald-500 animate-pulse"
-                : wsStatus === "connecting"
-                ? "bg-amber-400 animate-ping"
-                : wsStatus === "fallback_polling"
-                ? "bg-amber-500 animate-pulse"
-                : "bg-slate-600"
-            }`}
-          ></span>
-          <span className="font-medium">
-            {wsStatus === "connected" && "Live WebSocket Active"}
-            {wsStatus === "connecting" && "Connecting WebSocket..."}
-            {wsStatus === "fallback_polling" && "10s Polling Fallback"}
-            {wsStatus === "disconnected" && "Offline"}
-          </span>
+
+        <div className="flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-2 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl text-xs text-slate-300">
+            <span
+              className={`w-2.5 h-2.5 rounded-full ${
+                wsStatus === "connected"
+                  ? "bg-emerald-500 animate-pulse"
+                  : wsStatus === "connecting"
+                  ? "bg-amber-400 animate-ping"
+                  : wsStatus === "fallback_polling"
+                  ? "bg-amber-500 animate-pulse"
+                  : "bg-slate-600"
+              }`}
+            ></span>
+            <span className="font-medium">
+              {wsStatus === "connected" && "Live WebSocket Active"}
+              {wsStatus === "connecting" && "Connecting WebSocket..."}
+              {wsStatus === "fallback_polling" && "10s Polling Fallback"}
+              {wsStatus === "disconnected" && "Offline"}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs font-semibold rounded-xl transition cursor-pointer flex items-center gap-1.5"
+          >
+            <svg className="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            Logout
+          </button>
         </div>
       </header>
 
       {/* Top Real-Time Stats */}
       <StatsPanel />
 
-      {/* Main Grid: 2-Column Layout (Left 1/3 Queue & Dispatch, Right 2/3 Map & Inventory) */}
+      {/* Main Grid: 2-Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column (roughly 1/3 width: 4 cols out of 12) */}
+        {/* Left Column */}
         <div className="lg:col-span-4 space-y-6 flex flex-col">
           {/* Incident Queue */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
@@ -256,7 +399,7 @@ export default function AdminDashboardPage() {
           />
         </div>
 
-        {/* Right Column (roughly 2/3 width: 8 cols out of 12) */}
+        {/* Right Column */}
         <div className="lg:col-span-8 space-y-6 flex flex-col">
           {/* Interactive Tactical Leaflet Map */}
           <div className="flex-1 min-h-[500px]">

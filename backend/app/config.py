@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     NEXTJS_NOTIFY_URL: str = "http://localhost:3000/api/notify"
     INTERNAL_API_SECRET: str = "placeholder_secret"
     OSRM_BASE_URL: str = "https://router.project-osrm.org"
+    ADMIN_USERNAME: str = "admin"
+    ADMIN_PASSWORD: str = "adminpass"
+
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

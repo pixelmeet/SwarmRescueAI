@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState } from "react";
 import { listRequests, EmergencyRequestResponse, Severity } from "@/lib/api";
+import { QueueSkeleton } from "@/components/ui/Skeleton";
+
 
 interface RequestQueueProps {
   onSelectRequest?: (request: EmergencyRequestResponse) => void;
@@ -135,18 +137,21 @@ export function RequestQueue({
 
       {/* Requests List */}
       {loading && sortedAndFilteredRequests.length === 0 ? (
-        <div className="p-6 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-400 text-center animate-pulse">
-          Loading live incident stream...
-        </div>
+        <QueueSkeleton count={3} />
       ) : error ? (
         <div className="p-3 bg-red-950/60 border border-red-800 rounded-lg text-xs text-red-300">
           {error}
         </div>
       ) : sortedAndFilteredRequests.length === 0 ? (
-        <div className="p-6 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-400 text-center">
-          No emergency requests found matching selected filter.
+        <div className="p-8 bg-slate-950 border border-slate-800 rounded-xl text-center space-y-2">
+          <svg className="w-8 h-8 mx-auto text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <p className="text-xs text-slate-300 font-semibold">No pending requests found</p>
+          <p className="text-[11px] text-slate-500">All emergency requests for this filter have been assigned or resolved.</p>
         </div>
       ) : (
+
         <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
           {sortedAndFilteredRequests.map((req) => {
             const isSelected = selectedRequestId === req.id;

@@ -30,3 +30,7 @@ class AssignmentResponse(AssignmentCreate):
         from_attributes=True,
         populate_by_name=True
     )
+
+class AssignmentStatusUpdate(BaseModel):
+    status: AssignmentStatusEnum
+
