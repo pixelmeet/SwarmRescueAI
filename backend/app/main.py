@@ -48,12 +48,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include API routers under /api/v1
-app.include_router(requests.router, prefix="/api/v1/requests", tags=["Requests"])
-app.include_router(teams.router, prefix="/api/v1/teams", tags=["Teams"])
-app.include_router(ambulances.router, prefix="/api/v1/ambulances", tags=["Ambulances"])
-app.include_router(hospitals.router, prefix="/api/v1/hospitals", tags=["Hospitals"])
-app.include_router(volunteers.router, prefix="/api/v1/volunteers", tags=["Volunteers"])
+# Include API routers under /api and /api/v1
+app.include_router(requests.router, prefix="/api/requests", tags=["Requests"])
+app.include_router(teams.router, prefix="/api/teams", tags=["Teams"])
+app.include_router(ambulances.router, prefix="/api/ambulances", tags=["Ambulances"])
+app.include_router(hospitals.router, prefix="/api/hospitals", tags=["Hospitals"])
+app.include_router(volunteers.router, prefix="/api/volunteers", tags=["Volunteers"])
+
+app.include_router(requests.router, prefix="/api/v1/requests", tags=["Requests (v1)"])
+app.include_router(teams.router, prefix="/api/v1/teams", tags=["Teams (v1)"])
+app.include_router(ambulances.router, prefix="/api/v1/ambulances", tags=["Ambulances (v1)"])
+app.include_router(hospitals.router, prefix="/api/v1/hospitals", tags=["Hospitals (v1)"])
+app.include_router(volunteers.router, prefix="/api/v1/volunteers", tags=["Volunteers (v1)"])
 app.include_router(assignments.router, prefix="/api/v1/assignments", tags=["Assignments"])
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
 

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List
+from typing import List, Optional
 from enum import Enum
 from app.schemas.common import GeoJSONPoint
 
@@ -20,6 +20,13 @@ class RescueTeamCreate(BaseModel):
     location: GeoJSONPoint
     status: ResourceStatusEnum = ResourceStatusEnum.AVAILABLE
     skills: List[str] = Field(default_factory=list)
+
+class RescueTeamUpdate(BaseModel):
+    name: Optional[str] = None
+    type: Optional[TeamTypeEnum] = None
+    location: Optional[GeoJSONPoint] = None
+    status: Optional[ResourceStatusEnum] = None
+    skills: Optional[List[str]] = None
 
 class RescueTeamResponse(RescueTeamCreate):
     id: str = Field(..., description="MongoDB string ID")

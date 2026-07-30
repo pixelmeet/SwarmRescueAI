@@ -32,6 +32,15 @@ class EmergencyRequestCreate(BaseModel):
     reporter_email: str
     reporter_name: str
 
+class EmergencyRequestUpdate(BaseModel):
+    description: Optional[str] = None
+    location: Optional[GeoJSONPoint] = None
+    severity: Optional[SeverityEnum] = None
+    category: Optional[CategoryEnum] = None
+    status: Optional[RequestStatusEnum] = None
+    reporter_email: Optional[str] = None
+    reporter_name: Optional[str] = None
+
 class EmergencyRequestResponse(EmergencyRequestCreate):
     id: str = Field(..., description="MongoDB string ID")
     created_at: datetime = Field(default_factory=datetime.utcnow)
