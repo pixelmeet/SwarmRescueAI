@@ -1,14 +1,494 @@
-import React from "react";
+"use client";
 
-interface LeafletMapProps {
+import React, { useEffect } from "react";
+import dynamic from "next/dynamic";
+import "leaflet/dist/leaflet.css";
+import {
+  EmergencyRequestResponse,
+  RequestRecommendations,
+  RescueTeam,
+  Ambulance,
+  Hospital,
+  Volunteer,
+} from "@/lib/api";
+
+export interface LeafletMapProps {
+  teams?: RescueTeam[];
+  ambulances?: Ambulance[];
+  hospitals?: Hospital[];
+  volunteers?: Volunteer[];
+  selectedRequest?: EmergencyRequestResponse | null;
+  recommendations?: RequestRecommendations;
+  onSelectRequest?: (req: EmergencyRequestResponse) => void;
+  allRequests?: EmergencyRequestResponse[];
   center?: [number, number];
   zoom?: number;
 }
 
-export function LeafletMap({ center = [12.9716, 77.5946], zoom = 13 }: LeafletMapProps) {
-  return (
-    <div className="w-full h-full min-h-[300px] bg-slate-900 border border-slate-800 rounded-lg flex items-center justify-center text-slate-500">
-      [LeafletMap Placeholder - Lat: {center[0]}, Lng: {center[1]}, Zoom: {zoom}]
-    </div>
-  );
+const DEFAULT_CENTER: [number, number] = [12.9716, 77.5946];
+
+// Helper to convert GeoJSON [lng, lat] to Leaflet [lat, lng]
+function geoToLatLng(coords: [number, number]): [number, number] {
+  return [coords[1], coords[0]];
+}
+
+const LeafletMapInner = dynamic(
+  async () => {
+    const L = await import("leaflet");
+    const { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } = await import("react-leaflet");
+
+    // Custom Icon Generators using Leaflet DivIcons
+    const createMarkerIcon = (
+      type: "team" | "ambulance" | "hospital" | "volunteer" | "request",
+      status: string = "available",
+      isTopCandidate: boolean = false
+    ) => {
+      let bg = "#3b82f6";
+      let iconSymbol = "📍";
+      const isAvailable = status === "available" || status === "pending";
+      const opacity = isAvailable ? "1.0" : "0.45";
+
+      switch (type) {
+        case "team":
+          bg = "#ef4444"; // Red
+          iconSymbol = "🚒";
+          break;
+        case "ambulance":
+          bg = "#f97316"; // Orange
+          iconSymbol = "🚑";
+          break;
+        case "hospital":
+          bg = "#2563eb"; // Blue
+          iconSymbol = "🏥";
+          break;
+        case "volunteer":
+          bg = "#10b981"; // Emerald
+          iconSymbol = "🙋";
+          break;
+        case "request":
+          bg = "#dc2626"; // Crimson
+          iconSymbol = "🚨";
+          break;
+      }
+
+      const topHalo = isTopCandidate
+        ? "outline: 3px solid #eab308; outline-offset: 2px; box-shadow: 0 0 16px rgba(234, 179, 8, 0.9);"
+        : `box-shadow: 0 4px 12px ${bg}66;`;
+
+      const html = `
+        <div style="
+          width: 32px;
+          height: 32px;
+          background: ${bg};
+          border: 2px solid #ffffff;
+          border-radius: 50%;
+          opacity: ${opacity};
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 14px;
+          color: white;
+          cursor: pointer;
+          transition: transform 0.2s ease;
+          ${topHalo}
+        ">
+          ${iconSymbol}
+        </div>
+      `;
+
+      return L.divIcon({
+        className: "custom-dashboard-marker",
+        html,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+        popupAnchor: [0, -16],
+      });
+    };
+
+    const createSelectedRequestIcon = () => {
+      const html = `
+        <div style="position: relative; width: 42px; height: 42px;">
+          <div style="
+            position: absolute;
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            background: rgba(239, 68, 68, 0.35);
+            animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+          "></div>
+          <div style="
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            width: 32px;
+            height: 32px;
+            background: #dc2626;
+            border: 3px solid #ffffff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            box-shadow: 0 0 20px rgba(220, 38, 38, 0.9);
+          ">
+            🚨
+          </div>
+        </div>
+      `;
+      return L.divIcon({
+        className: "custom-selected-request-marker",
+        html,
+        iconSize: [42, 42],
+        iconAnchor: [21, 21],
+        popupAnchor: [0, -21],
+      });
+    };
+
+    function MapController({ centerPos }: { centerPos: [number, number] }) {
+      const map = useMap();
+      useEffect(() => {
+        if (centerPos) {
+          map.panTo(centerPos, { animate: true, duration: 0.8 });
+        }
+      }, [centerPos, map]);
+      return null;
+    }
+
+    return function InnerDashboardMap({
+      teams = [],
+      ambulances = [],
+      hospitals = [],
+      volunteers = [],
+      selectedRequest,
+      recommendations,
+      onSelectRequest,
+      allRequests = [],
+      center = DEFAULT_CENTER,
+      zoom = 13,
+    }: LeafletMapProps) {
+      // Find top candidate coordinates for selected request
+      const selectedReqCoords = selectedRequest
+        ? geoToLatLng(selectedRequest.location.coordinates)
+        : null;
+
+      const topCandidateLines: Array<{ id: string; label: string; coords: [[number, number], [number, number]] }> = [];
+      const topCandidateIds = new Set<string>();
+
+      if (selectedReqCoords && recommendations) {
+        const topTeam = recommendations.rescue_teams?.[0];
+        if (topTeam) {
+          topCandidateIds.add(topTeam.resource_id);
+          const match = teams.find((t) => t.id === topTeam.resource_id);
+          if (match) {
+            topCandidateLines.push({
+              id: topTeam.resource_id,
+              label: `Team: ${topTeam.name}`,
+              coords: [selectedReqCoords, geoToLatLng(match.location.coordinates)],
+            });
+          }
+        }
+
+        const topAmb = recommendations.ambulances?.[0];
+        if (topAmb) {
+          topCandidateIds.add(topAmb.resource_id);
+          const match = ambulances.find((a) => a.id === topAmb.resource_id);
+          if (match) {
+            topCandidateLines.push({
+              id: topAmb.resource_id,
+              label: `Ambulance: ${topAmb.name}`,
+              coords: [selectedReqCoords, geoToLatLng(match.location.coordinates)],
+            });
+          }
+        }
+
+        const topHosp = recommendations.hospitals?.[0];
+        if (topHosp) {
+          topCandidateIds.add(topHosp.resource_id);
+          const match = hospitals.find((h) => h.id === topHosp.resource_id);
+          if (match) {
+            topCandidateLines.push({
+              id: topHosp.resource_id,
+              label: `Hospital: ${topHosp.name}`,
+              coords: [selectedReqCoords, geoToLatLng(match.location.coordinates)],
+            });
+          }
+        }
+
+        const topVol = recommendations.volunteers?.[0];
+        if (topVol) {
+          topCandidateIds.add(topVol.resource_id);
+          const match = volunteers.find((v) => v.id === topVol.resource_id);
+          if (match) {
+            topCandidateLines.push({
+              id: topVol.resource_id,
+              label: `Volunteer: ${topVol.name}`,
+              coords: [selectedReqCoords, geoToLatLng(match.location.coordinates)],
+            });
+          }
+        }
+      }
+
+      // Map center priority: Selected Request position > explicit center prop > default
+      const activeCenter = selectedReqCoords || center;
+
+      return (
+        <div className="relative w-full h-full min-h-[480px] rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
+          <MapContainer
+            center={activeCenter}
+            zoom={zoom}
+            scrollWheelZoom={true}
+            className="w-full h-full z-0"
+          >
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+            <MapController centerPos={activeCenter} />
+
+            {/* Connecting lines from selected request to top recommended candidates */}
+            {topCandidateLines.map((line) => (
+              <Polyline
+                key={line.id}
+                positions={line.coords}
+                pathOptions={{
+                  color: "#eab308", // Golden Yellow
+                  weight: 3,
+                  dashArray: "8, 8",
+                  opacity: 0.95,
+                }}
+              />
+            ))}
+
+            {/* Rescue Teams */}
+            {teams.map((t) => {
+              const pos = geoToLatLng(t.location.coordinates);
+              const isTop = topCandidateIds.has(t.id);
+              return (
+                <Marker
+                  key={`team-${t.id}`}
+                  position={pos}
+                  icon={createMarkerIcon("team", t.status, isTop)}
+                >
+                  <Popup className="custom-leaflet-popup">
+                    <div className="p-1 space-y-1 text-slate-900 font-sans">
+                      <div className="font-bold text-sm flex items-center gap-1 text-red-600">
+                        <span>🚒</span> {t.name}
+                      </div>
+                      <div className="text-xs font-semibold text-slate-700">
+                        Type: <span className="uppercase">{t.type}</span>
+                      </div>
+                      <div className="text-xs">
+                        Status:{" "}
+                        <span className={`font-bold ${t.status === "available" ? "text-emerald-600" : "text-amber-600"}`}>
+                          {t.status}
+                        </span>
+                      </div>
+                      {t.skills && t.skills.length > 0 && (
+                        <div className="text-[11px] text-slate-600">
+                          Skills: {t.skills.join(", ")}
+                        </div>
+                      )}
+                    </div>
+                  </Popup>
+                </Marker>
+              );
+            })}
+
+            {/* Ambulances */}
+            {ambulances.map((a) => {
+              const pos = geoToLatLng(a.location.coordinates);
+              const isTop = topCandidateIds.has(a.id);
+              return (
+                <Marker
+                  key={`amb-${a.id}`}
+                  position={pos}
+                  icon={createMarkerIcon("ambulance", a.status, isTop)}
+                >
+                  <Popup className="custom-leaflet-popup">
+                    <div className="p-1 space-y-1 text-slate-900 font-sans">
+                      <div className="font-bold text-sm flex items-center gap-1 text-orange-600">
+                        <span>🚑</span> {a.driver_name}
+                      </div>
+                      <div className="text-xs font-mono">Plate: {a.plate_number}</div>
+                      <div className="text-xs">
+                        Status:{" "}
+                        <span className={`font-bold ${a.status === "available" ? "text-emerald-600" : "text-amber-600"}`}>
+                          {a.status}
+                        </span>
+                      </div>
+                    </div>
+                  </Popup>
+                </Marker>
+              );
+            })}
+
+            {/* Hospitals */}
+            {hospitals.map((h) => {
+              const pos = geoToLatLng(h.location.coordinates);
+              const isTop = topCandidateIds.has(h.id);
+              const hasBeds = h.available_beds > 0;
+              return (
+                <Marker
+                  key={`hosp-${h.id}`}
+                  position={pos}
+                  icon={createMarkerIcon("hospital", hasBeds ? "available" : "busy", isTop)}
+                >
+                  <Popup className="custom-leaflet-popup">
+                    <div className="p-1 space-y-1 text-slate-900 font-sans">
+                      <div className="font-bold text-sm flex items-center gap-1 text-blue-600">
+                        <span>🏥</span> {h.name}
+                      </div>
+                      <div className="text-xs">Phone: {h.phone}</div>
+                      <div className="text-xs font-semibold text-emerald-700">
+                        Beds: {h.available_beds} / {h.total_beds} available
+                      </div>
+                    </div>
+                  </Popup>
+                </Marker>
+              );
+            })}
+
+            {/* Volunteers */}
+            {volunteers.map((v) => {
+              const pos = geoToLatLng(v.location.coordinates);
+              const isTop = topCandidateIds.has(v.id);
+              return (
+                <Marker
+                  key={`vol-${v.id}`}
+                  position={pos}
+                  icon={createMarkerIcon("volunteer", v.status, isTop)}
+                >
+                  <Popup className="custom-leaflet-popup">
+                    <div className="p-1 space-y-1 text-slate-900 font-sans">
+                      <div className="font-bold text-sm flex items-center gap-1 text-emerald-600">
+                        <span>🙋</span> {v.name}
+                      </div>
+                      <div className="text-xs text-slate-600">{v.email}</div>
+                      <div className="text-xs">
+                        Status:{" "}
+                        <span className={`font-bold ${v.status === "available" ? "text-emerald-600" : "text-amber-600"}`}>
+                          {v.status}
+                        </span>
+                      </div>
+                      {v.skills && v.skills.length > 0 && (
+                        <div className="text-[11px] text-slate-600">
+                          Skills: {v.skills.join(", ")}
+                        </div>
+                      )}
+                    </div>
+                  </Popup>
+                </Marker>
+              );
+            })}
+
+            {/* All unselected requests stream markers */}
+            {allRequests
+              .filter((r) => !selectedRequest || r.id !== selectedRequest.id)
+              .map((req) => {
+                const pos = geoToLatLng(req.location.coordinates);
+                return (
+                  <Marker
+                    key={`req-${req.id}`}
+                    position={pos}
+                    icon={createMarkerIcon("request", req.status)}
+                    eventHandlers={{
+                      click: () => onSelectRequest && onSelectRequest(req),
+                    }}
+                  >
+                    <Popup className="custom-leaflet-popup">
+                      <div className="p-1 space-y-1 text-slate-900 font-sans">
+                        <div className="font-bold text-xs uppercase flex justify-between gap-2 text-red-600">
+                          <span>🚨 {req.category}</span>
+                          <span className="text-[10px] font-bold text-slate-800 uppercase px-1.5 bg-slate-200 rounded">
+                            {req.severity}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-700">{req.description}</p>
+                        <button
+                          type="button"
+                          onClick={() => onSelectRequest && onSelectRequest(req)}
+                          className="w-full mt-1 py-1 bg-red-600 text-white rounded text-[11px] font-bold hover:bg-red-700"
+                        >
+                          Select Incident
+                        </button>
+                      </div>
+                    </Popup>
+                  </Marker>
+                );
+              })}
+
+            {/* Selected Request Highlight Marker */}
+            {selectedRequest && selectedReqCoords && (
+              <Marker
+                position={selectedReqCoords}
+                icon={createSelectedRequestIcon()}
+              >
+                <Popup className="custom-leaflet-popup">
+                  <div className="p-1 space-y-1 text-slate-900 font-sans">
+                    <div className="font-extrabold text-xs text-red-600 uppercase flex items-center justify-between">
+                      <span>🚨 SELECTED INCIDENT</span>
+                      <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-[10px] rounded">
+                        {selectedRequest.severity}
+                      </span>
+                    </div>
+                    <div className="font-bold text-xs text-slate-800">{selectedRequest.category}</div>
+                    <p className="text-xs text-slate-700">{selectedRequest.description}</p>
+                  </div>
+                </Popup>
+              </Marker>
+            )}
+          </MapContainer>
+
+          {/* Map Legend Overlay */}
+          <div className="absolute bottom-3 left-3 z-[400] bg-slate-950/90 backdrop-blur border border-slate-800 p-2.5 rounded-xl text-[11px] text-slate-300 space-y-1 shadow-lg pointer-events-auto">
+            <div className="font-bold text-slate-100 text-[10px] uppercase tracking-wider mb-1">
+              Resource Layers
+            </div>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span>
+                Rescue Teams
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-orange-500 inline-block"></span>
+                Ambulances
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block"></span>
+                Hospitals
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span>
+                Volunteers
+              </span>
+            </div>
+            {recommendations && (
+              <div className="pt-1.5 border-t border-slate-800 text-[10px] text-yellow-400 font-semibold flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-yellow-400 animate-ping"></span>
+                Yellow lines = Top AI Recommendations
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    };
+  },
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-full min-h-[480px] rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 text-sm">
+        <div className="flex items-center gap-2 font-medium">
+          <svg className="animate-spin h-5 w-5 text-blue-500" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+          </svg>
+          Initializing Tactical Command Map...
+        </div>
+      </div>
+    ),
+  }
+);
+
+export function LeafletMap(props: LeafletMapProps) {
+  return <LeafletMapInner {...props} />;
 }

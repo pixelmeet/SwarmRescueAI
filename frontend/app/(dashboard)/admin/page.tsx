@@ -1,8 +1,10 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { StatsPanel } from "@/components/dashboard/StatsPanel";
 import { RequestQueue } from "@/components/dashboard/RequestQueue";
+import { AssignmentCard } from "@/components/dashboard/AssignmentCard";
+import { LeafletMap } from "@/components/map/LeafletMap";
 import {
   EmergencyRequestResponse,
   RecommendationCandidate,
@@ -14,6 +16,7 @@ import {
   ResourceType,
   getRequestRecommendations,
   createAssignment,
+  listRequests,
   listTeams,
   listAmbulances,
   listHospitals,
@@ -27,8 +30,13 @@ const EMPTY_RECOMMENDATIONS: RequestRecommendations = {
   volunteers: [],
 };
 
+const POLLING_INTERVAL_MS = 10000; // 10 seconds polling fallback
+
 export default function AdminDashboardPage() {
+  const [requests, setRequests] = useState<EmergencyRequestResponse[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState<boolean>(true);
   const [selectedRequest, setSelectedRequest] = useState<EmergencyRequestResponse | null>(null);
+
   const [recommendations, setRecommendations] = useState<RequestRecommendations>(EMPTY_RECOMMENDATIONS);
   const [loadingRecs, setLoadingRecs] = useState<boolean>(false);
   const [recError, setRecError] = useState<string | null>(null);
@@ -36,34 +44,61 @@ export default function AdminDashboardPage() {
   const [dispatchStatus, setDispatchStatus] = useState<string | null>(null);
   const [dispatchingId, setDispatchingId] = useState<string | null>(null);
 
-  // Active Resource Tab
-  const [activeTab, setActiveTab] = useState<"teams" | "ambulances" | "hospitals" | "volunteers">("teams");
+  // Resources state
   const [teams, setTeams] = useState<RescueTeam[]>([]);
   const [ambulances, setAmbulances] = useState<Ambulance[]>([]);
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
   const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
+  const [activeTab, setActiveTab] = useState<"teams" | "ambulances" | "hospitals" | "volunteers">("teams");
 
-  const loadResources = async () => {
+  // Fetch all live dashboard data
+  const refreshDashboardData = useCallback(async (isInitial = false) => {
+    if (isInitial) setLoadingRequests(true);
+
     try {
-      const [tRes, aRes, hRes, vRes] = await Promise.all([
+      const [reqRes, tRes, aRes, hRes, vRes] = await Promise.all([
+        listRequests().catch(() => []),
         listTeams().catch(() => []),
         listAmbulances().catch(() => []),
         listHospitals().catch(() => []),
         listVolunteers().catch(() => []),
       ]);
+
+      setRequests(reqRes);
       setTeams(tRes);
       setAmbulances(aRes);
       setHospitals(hRes);
       setVolunteers(vRes);
-    } catch (err) {
-      console.error("Error loading resources:", err);
-    }
-  };
 
+      // If a request is selected, update selectedRequest reference with fresh data
+      if (selectedRequest) {
+        const updated = reqRes.find((r) => r.id === selectedRequest.id);
+        if (updated) {
+          setSelectedRequest(updated);
+        }
+      }
+    } catch (err) {
+      console.error("Dashboard background refresh error:", err);
+    } finally {
+      if (isInitial) setLoadingRequests(false);
+    }
+  }, [selectedRequest]);
+
+  // Initial load
   useEffect(() => {
-    loadResources();
+    refreshDashboardData(true);
   }, []);
 
+  // 10-Second Polling Refresh
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refreshDashboardData(false);
+    }, POLLING_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [refreshDashboardData]);
+
+  // Fetch recommendations whenever a request is selected
   const handleSelectRequest = async (req: EmergencyRequestResponse) => {
     setSelectedRequest(req);
     setRecommendations(EMPTY_RECOMMENDATIONS);
@@ -82,7 +117,8 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const handleDispatch = async (candidate: RecommendationCandidate, resourceType: ResourceType) => {
+  // Perform Manual Assignment
+  const handleAssign = async (candidate: RecommendationCandidate, resourceType: ResourceType) => {
     if (!selectedRequest) return;
     setDispatchingId(candidate.resource_id);
     setDispatchStatus(null);
@@ -96,9 +132,15 @@ export default function AdminDashboardPage() {
       });
 
       setDispatchStatus(`Successfully assigned ${candidate.name} (${resourceType.replace("_", " ")}) — Assignment ID: ${res.id}`);
-      // Update local status
+      
+      // Optimistic state update
       setSelectedRequest({ ...selectedRequest, status: "assigned" });
-      loadResources();
+      setRequests((prev) =>
+        prev.map((r) => (r.id === selectedRequest.id ? { ...r, status: "assigned" } : r))
+      );
+
+      // Trigger immediate backend data refresh
+      await refreshDashboardData(false);
     } catch (err) {
       console.error("Dispatch error:", err);
       setDispatchStatus(`Dispatch failed: ${err instanceof Error ? err.message : "Unknown error"}`);
@@ -107,166 +149,79 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const totalCandidates =
-    (recommendations.rescue_teams?.length || 0) +
-    (recommendations.ambulances?.length || 0) +
-    (recommendations.hospitals?.length || 0) +
-    (recommendations.volunteers?.length || 0);
-
-  const renderRecommendationSection = (
-    title: string,
-    candidates: RecommendationCandidate[],
-    resourceType: ResourceType,
-    badgeColor: string
-  ) => {
-    if (!candidates || candidates.length === 0) return null;
-
-    return (
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-            <span className={`w-2 h-2 rounded-full ${badgeColor}`}></span>
-            {title} ({candidates.length})
-          </span>
-        </div>
-        <div className="space-y-2">
-          {candidates.map((cand, idx) => (
-            <div
-              key={cand.resource_id}
-              className="p-3 bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-xl flex items-center justify-between gap-3 text-xs"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-7 h-7 rounded-full bg-blue-900/60 text-blue-400 border border-blue-700 flex items-center justify-center font-bold text-xs shrink-0">
-                  #{idx + 1}
-                </div>
-                <div>
-                  <div className="font-bold text-slate-100">{cand.name}</div>
-                  <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
-                    <span className="text-emerald-400 font-medium">{cand.distance_km} km away</span>
-                    <span>&bull;</span>
-                    <span className="text-amber-400 font-medium">
-                      ETA: {cand.eta_minutes !== null ? `${cand.eta_minutes} min` : "N/A"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <div className="text-right">
-                  <div className="text-xs font-bold text-blue-400">{Math.round(cand.score * 100)}%</div>
-                  <div className="text-[10px] text-slate-500">Score</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleDispatch(cand, resourceType)}
-                  disabled={dispatchingId === cand.resource_id || selectedRequest?.status === "assigned"}
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold rounded-lg text-xs transition shadow shrink-0 cursor-pointer"
-                >
-                  {dispatchingId === cand.resource_id ? "Assigning..." : "Assign"}
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
-
   return (
-    <div className="p-4 md:p-8 space-y-6 bg-slate-950 min-h-screen text-slate-100">
+    <div className="p-4 md:p-6 space-y-6 bg-slate-950 min-h-screen text-slate-100 font-sans">
       {/* Header */}
       <header className="flex justify-between items-center pb-4 border-b border-slate-800">
         <div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-blue-400 tracking-tight flex items-center gap-2">
-            <svg className="w-8 h-8 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <h1 className="text-2xl md:text-3xl font-extrabold text-blue-400 tracking-tight flex items-center gap-2.5">
+            <svg className="w-8 h-8 text-blue-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
             </svg>
-            SwarmRescue Admin Command Center
+            SwarmRescue AI Admin Command Center
           </h1>
-          <p className="text-xs text-slate-400">Live emergency dispatch, real-time scoring recommendations & resource management.</p>
+          <p className="text-xs text-slate-400 mt-1">
+            Real-time emergency queue, geospatial AI scoring recommendations & manual resource dispatch.
+          </p>
+        </div>
+        <div className="hidden sm:flex items-center gap-2 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl text-xs text-slate-300">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+          <span>10s Polling Active</span>
         </div>
       </header>
 
       {/* Top Real-Time Stats */}
       <StatsPanel />
 
-      {/* Main Grid: Left Request Stream, Right Dispatch & Resources */}
+      {/* Main Grid: 2-Column Layout (Left 1/3 Queue & Dispatch, Right 2/3 Map & Inventory) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Live Queue (5 cols) */}
-        <div className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
-          <RequestQueue
-            onSelectRequest={handleSelectRequest}
-            selectedRequestId={selectedRequest?.id}
+        {/* Left Column (roughly 1/3 width: 4 cols out of 12) */}
+        <div className="lg:col-span-4 space-y-6 flex flex-col">
+          {/* Incident Queue */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+            <RequestQueue
+              requests={requests}
+              loading={loadingRequests}
+              onRefresh={() => refreshDashboardData(false)}
+              onSelectRequest={handleSelectRequest}
+              selectedRequestId={selectedRequest?.id}
+            />
+          </div>
+
+          {/* Intelligent Resource Dispatch Panel */}
+          <AssignmentCard
+            selectedRequest={selectedRequest}
+            recommendations={recommendations}
+            loadingRecs={loadingRecs}
+            recError={recError}
+            onAssign={handleAssign}
+            dispatchStatus={dispatchStatus}
+            dispatchingId={dispatchingId}
           />
         </div>
 
-        {/* Right Column: Intelligent Dispatch Engine (7 cols) */}
-        <div className="lg:col-span-7 space-y-6">
-          {/* Dispatch Panel */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
-            <h3 className="font-bold text-sm text-slate-200 uppercase tracking-wider flex items-center justify-between">
-              <span>Intelligent Resource Dispatch Engine</span>
-              {selectedRequest && (
-                <span className="text-xs text-blue-400 font-mono">Request ID: {selectedRequest.id.substring(0, 8)}</span>
-              )}
-            </h3>
-
-            {!selectedRequest ? (
-              <div className="p-8 border border-dashed border-slate-800 rounded-xl text-center text-slate-400 text-xs space-y-2">
-                <svg className="w-10 h-10 text-slate-600 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
-                </svg>
-                <p>Select an emergency incident from the left queue to view AI recommendations and dispatch resources.</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {/* Selected Request Detail */}
-                <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="font-bold text-white uppercase">{selectedRequest.category} Incident</span>
-                    <span className="px-2 py-0.5 bg-red-950 text-red-400 border border-red-800 rounded text-[10px] uppercase font-bold">
-                      {selectedRequest.severity}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-300">{selectedRequest.description}</p>
-                </div>
-
-                {dispatchStatus && (
-                  <div className="p-3 bg-blue-950/80 border border-blue-600 rounded-lg text-xs text-blue-200 font-medium">
-                    {dispatchStatus}
-                  </div>
-                )}
-
-                {/* Recommendations List */}
-                {loadingRecs ? (
-                  <div className="p-6 text-center text-xs text-slate-400 animate-pulse">
-                    Computing optimal resource matches with Scoring Engine...
-                  </div>
-                ) : recError ? (
-                  <div className="p-3 bg-red-950/60 border border-red-800 rounded-lg text-xs text-red-300">
-                    {recError}
-                  </div>
-                ) : totalCandidates === 0 ? (
-                  <div className="p-4 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-400 text-center">
-                    No available resources matched for this request location/skills.
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {renderRecommendationSection("Rescue Teams", recommendations.rescue_teams, "rescue_team", "bg-red-500")}
-                    {renderRecommendationSection("Ambulances", recommendations.ambulances, "ambulance", "bg-amber-500")}
-                    {renderRecommendationSection("Hospitals", recommendations.hospitals, "hospital", "bg-blue-500")}
-                    {renderRecommendationSection("Volunteers", recommendations.volunteers, "volunteer", "bg-emerald-500")}
-                  </div>
-                )}
-              </div>
-            )}
+        {/* Right Column (roughly 2/3 width: 8 cols out of 12) */}
+        <div className="lg:col-span-8 space-y-6 flex flex-col">
+          {/* Interactive Tactical Leaflet Map */}
+          <div className="flex-1 min-h-[500px]">
+            <LeafletMap
+              teams={teams}
+              ambulances={ambulances}
+              hospitals={hospitals}
+              volunteers={volunteers}
+              selectedRequest={selectedRequest}
+              recommendations={recommendations}
+              onSelectRequest={handleSelectRequest}
+              allRequests={requests}
+            />
           </div>
 
-          {/* Resource Inventory */}
+          {/* Resource Inventory Panel */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
             <div className="flex justify-between items-center">
-              <h3 className="font-bold text-sm text-slate-200 uppercase tracking-wider">
-                Available Resource Inventory
+              <h3 className="font-bold text-sm text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                Active Resource Inventory
               </h3>
               <div className="flex gap-1 text-xs">
                 {(["teams", "ambulances", "hospitals", "volunteers"] as const).map((tab) => (
@@ -275,7 +230,9 @@ export default function AdminDashboardPage() {
                     type="button"
                     onClick={() => setActiveTab(tab)}
                     className={`px-3 py-1 rounded-md font-semibold capitalize transition cursor-pointer ${
-                      activeTab === tab ? "bg-slate-800 text-white border border-slate-700" : "text-slate-400 hover:text-slate-200"
+                      activeTab === tab
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "bg-slate-800 text-slate-400 hover:text-slate-200"
                     }`}
                   >
                     {tab}
@@ -284,19 +241,23 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
-            <div className="max-h-[240px] overflow-y-auto pr-1">
+            <div className="max-h-[220px] overflow-y-auto pr-1">
               {activeTab === "teams" && (
-                <div className="space-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {teams.length === 0 ? (
-                    <p className="text-xs text-slate-400 italic">No rescue teams found.</p>
+                    <p className="text-xs text-slate-400 italic col-span-2">No rescue teams found.</p>
                   ) : (
                     teams.map((t) => (
-                      <div key={t.id} className="p-2.5 bg-slate-950 border border-slate-800 rounded-lg flex justify-between items-center text-xs">
+                      <div key={t.id} className="p-2.5 bg-slate-950 border border-slate-800 rounded-xl flex justify-between items-center text-xs">
                         <div>
-                          <span className="font-bold text-slate-200">{t.name}</span>
-                          <span className="text-[10px] text-slate-500 uppercase ml-2">({t.type})</span>
+                          <div className="font-bold text-slate-200">{t.name}</div>
+                          <div className="text-[10px] text-slate-500 uppercase">Type: {t.type}</div>
                         </div>
-                        <span className={`px-2 py-0.5 text-[10px] rounded uppercase font-semibold ${t.status === "available" ? "bg-emerald-950 text-emerald-400" : "bg-amber-950 text-amber-400"}`}>
+                        <span className={`px-2 py-0.5 text-[10px] rounded uppercase font-bold border ${
+                          t.status === "available"
+                            ? "bg-emerald-950 text-emerald-400 border-emerald-800"
+                            : "bg-amber-950 text-amber-400 border-amber-800"
+                        }`}>
                           {t.status}
                         </span>
                       </div>
@@ -306,17 +267,21 @@ export default function AdminDashboardPage() {
               )}
 
               {activeTab === "ambulances" && (
-                <div className="space-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {ambulances.length === 0 ? (
-                    <p className="text-xs text-slate-400 italic">No ambulances found.</p>
+                    <p className="text-xs text-slate-400 italic col-span-2">No ambulances found.</p>
                   ) : (
                     ambulances.map((a) => (
-                      <div key={a.id} className="p-2.5 bg-slate-950 border border-slate-800 rounded-lg flex justify-between items-center text-xs">
+                      <div key={a.id} className="p-2.5 bg-slate-950 border border-slate-800 rounded-xl flex justify-between items-center text-xs">
                         <div>
-                          <span className="font-bold text-slate-200">{a.driver_name}</span>
-                          <span className="text-[10px] font-mono text-slate-400 ml-2">[{a.plate_number}]</span>
+                          <div className="font-bold text-slate-200">{a.driver_name}</div>
+                          <div className="text-[10px] font-mono text-slate-400">Plate: {a.plate_number}</div>
                         </div>
-                        <span className={`px-2 py-0.5 text-[10px] rounded uppercase font-semibold ${a.status === "available" ? "bg-emerald-950 text-emerald-400" : "bg-amber-950 text-amber-400"}`}>
+                        <span className={`px-2 py-0.5 text-[10px] rounded uppercase font-bold border ${
+                          a.status === "available"
+                            ? "bg-emerald-950 text-emerald-400 border-emerald-800"
+                            : "bg-amber-950 text-amber-400 border-amber-800"
+                        }`}>
                           {a.status}
                         </span>
                       </div>
@@ -326,18 +291,18 @@ export default function AdminDashboardPage() {
               )}
 
               {activeTab === "hospitals" && (
-                <div className="space-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {hospitals.length === 0 ? (
-                    <p className="text-xs text-slate-400 italic">No hospitals found.</p>
+                    <p className="text-xs text-slate-400 italic col-span-2">No hospitals found.</p>
                   ) : (
                     hospitals.map((h) => (
-                      <div key={h.id} className="p-2.5 bg-slate-950 border border-slate-800 rounded-lg flex justify-between items-center text-xs">
+                      <div key={h.id} className="p-2.5 bg-slate-950 border border-slate-800 rounded-xl flex justify-between items-center text-xs">
                         <div>
-                          <span className="font-bold text-slate-200">{h.name}</span>
-                          <span className="text-[10px] text-slate-400 ml-2">Ph: {h.phone}</span>
+                          <div className="font-bold text-slate-200">{h.name}</div>
+                          <div className="text-[10px] text-slate-400">Ph: {h.phone}</div>
                         </div>
-                        <span className="font-bold text-emerald-400 text-xs">
-                          {h.available_beds} / {h.total_beds} beds free
+                        <span className="font-bold text-emerald-400 text-xs bg-emerald-950/80 px-2 py-1 rounded border border-emerald-800">
+                          {h.available_beds}/{h.total_beds} beds
                         </span>
                       </div>
                     ))
@@ -346,17 +311,21 @@ export default function AdminDashboardPage() {
               )}
 
               {activeTab === "volunteers" && (
-                <div className="space-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {volunteers.length === 0 ? (
-                    <p className="text-xs text-slate-400 italic">No volunteers found.</p>
+                    <p className="text-xs text-slate-400 italic col-span-2">No volunteers found.</p>
                   ) : (
                     volunteers.map((v) => (
-                      <div key={v.id} className="p-2.5 bg-slate-950 border border-slate-800 rounded-lg flex justify-between items-center text-xs">
+                      <div key={v.id} className="p-2.5 bg-slate-950 border border-slate-800 rounded-xl flex justify-between items-center text-xs">
                         <div>
-                          <span className="font-bold text-slate-200">{v.name}</span>
-                          <span className="text-[10px] text-slate-400 ml-2">{v.email}</span>
+                          <div className="font-bold text-slate-200">{v.name}</div>
+                          <div className="text-[10px] text-slate-400 truncate max-w-[140px]">{v.email}</div>
                         </div>
-                        <span className={`px-2 py-0.5 text-[10px] rounded uppercase font-semibold ${v.status === "available" ? "bg-emerald-950 text-emerald-400" : "bg-amber-950 text-amber-400"}`}>
+                        <span className={`px-2 py-0.5 text-[10px] rounded uppercase font-bold border ${
+                          v.status === "available"
+                            ? "bg-emerald-950 text-emerald-400 border-emerald-800"
+                            : "bg-amber-950 text-amber-400 border-amber-800"
+                        }`}>
                           {v.status}
                         </span>
                       </div>
