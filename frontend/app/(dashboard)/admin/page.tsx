@@ -5,6 +5,7 @@ import { StatsPanel } from "@/components/dashboard/StatsPanel";
 import { RequestQueue } from "@/components/dashboard/RequestQueue";
 import { AssignmentCard } from "@/components/dashboard/AssignmentCard";
 import { LeafletMap } from "@/components/map/LeafletMap";
+import { socketClient, ConnectionStatus } from "@/lib/socket";
 import {
   EmergencyRequestResponse,
   RecommendationCandidate,
@@ -43,6 +44,9 @@ export default function AdminDashboardPage() {
 
   const [dispatchStatus, setDispatchStatus] = useState<string | null>(null);
   const [dispatchingId, setDispatchingId] = useState<string | null>(null);
+
+  // Connection status state
+  const [wsStatus, setWsStatus] = useState<ConnectionStatus>("disconnected");
 
   // Resources state
   const [teams, setTeams] = useState<RescueTeam[]>([]);
@@ -84,19 +88,56 @@ export default function AdminDashboardPage() {
     }
   }, [selectedRequest]);
 
-  // Initial load
+  // Initial load & WebSocket connection setup
   useEffect(() => {
     refreshDashboardData(true);
+
+    // Connect WebSocket client
+    socketClient.connect();
+    const unsubStatus = socketClient.onStatusChange(setWsStatus);
+
+    // Subscribe to live WebSocket events
+    const unsubNewReq = socketClient.subscribe("new_request", (data: EmergencyRequestResponse) => {
+      setRequests((prev) => {
+        const exists = prev.some((r) => r.id === data.id);
+        if (exists) return prev.map((r) => (r.id === data.id ? { ...r, ...data } : r));
+        return [data, ...prev];
+      });
+    });
+
+    const unsubStatusUpdate = socketClient.subscribe("status_update", (data: EmergencyRequestResponse) => {
+      setRequests((prev) => prev.map((r) => (r.id === data.id ? { ...r, ...data } : r)));
+      setSelectedRequest((prev) => (prev && prev.id === data.id ? { ...prev, ...data } : prev));
+    });
+
+    const unsubNewAssign = socketClient.subscribe("new_assignment", () => {
+      refreshDashboardData(false);
+    });
+
+    const unsubResUpdate = socketClient.subscribe("resource_update", () => {
+      refreshDashboardData(false);
+    });
+
+    return () => {
+      unsubStatus();
+      unsubNewReq();
+      unsubStatusUpdate();
+      unsubNewAssign();
+      unsubResUpdate();
+      socketClient.disconnect();
+    };
   }, []);
 
-  // 10-Second Polling Refresh
+  // Polling Fallback (Only active if WebSocket fails after max reconnections)
   useEffect(() => {
+    if (wsStatus !== "fallback_polling") return;
+
     const interval = setInterval(() => {
       refreshDashboardData(false);
     }, POLLING_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [refreshDashboardData]);
+  }, [wsStatus, refreshDashboardData]);
 
   // Fetch recommendations whenever a request is selected
   const handleSelectRequest = async (req: EmergencyRequestResponse) => {
@@ -165,8 +206,23 @@ export default function AdminDashboardPage() {
           </p>
         </div>
         <div className="hidden sm:flex items-center gap-2 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl text-xs text-slate-300">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-          <span>10s Polling Active</span>
+          <span
+            className={`w-2.5 h-2.5 rounded-full ${
+              wsStatus === "connected"
+                ? "bg-emerald-500 animate-pulse"
+                : wsStatus === "connecting"
+                ? "bg-amber-400 animate-ping"
+                : wsStatus === "fallback_polling"
+                ? "bg-amber-500 animate-pulse"
+                : "bg-slate-600"
+            }`}
+          ></span>
+          <span className="font-medium">
+            {wsStatus === "connected" && "Live WebSocket Active"}
+            {wsStatus === "connecting" && "Connecting WebSocket..."}
+            {wsStatus === "fallback_polling" && "10s Polling Fallback"}
+            {wsStatus === "disconnected" && "Offline"}
+          </span>
         </div>
       </header>
 

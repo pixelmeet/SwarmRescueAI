@@ -11,6 +11,7 @@ from app.db.mongo import get_database
 from app.services.scoring_engine import find_best_matches
 from app.services.severity_classifier import classify_emergency
 from app.services.notify import send_notification
+from app.services.ws_manager import ws_manager
 from app.schemas.request import (
     EmergencyRequestCreate,
     EmergencyRequestUpdate,
@@ -72,6 +73,10 @@ async def create_emergency_request(request_payload: EmergencyRequestCreate):
     req_dict["created_at"] = datetime.utcnow()
     result = await db[COLLECTION_NAME].insert_one(req_dict)
     created_doc = await db[COLLECTION_NAME].find_one({"_id": result.inserted_id})
+    formatted_doc = format_request(created_doc)
+
+    # Broadcast real-time WebSocket event
+    await ws_manager.broadcast("new_request", formatted_doc)
 
     # Send non-blocking confirmation email to reporter if email exists
     reporter_email = created_doc.get("reporter_email")
@@ -94,7 +99,7 @@ async def create_emergency_request(request_payload: EmergencyRequestCreate):
         )
         asyncio.create_task(send_notification(to=reporter_email, subject=subject, text=text))
 
-    return format_request(created_doc)
+    return formatted_doc
 
 @router.get("/", response_model=List[EmergencyRequestResponse])
 async def list_emergency_requests(status: Optional[RequestStatusEnum] = Query(None, description="Filter by status")):
@@ -158,6 +163,11 @@ async def update_emergency_request(id: str, payload: EmergencyRequestUpdate):
             detail=f"Emergency request with id '{id}' not found"
         )
 
+    formatted_doc = format_request(updated_doc)
+
+    # Broadcast real-time WebSocket event for status update
+    await ws_manager.broadcast("status_update", formatted_doc)
+
     # Send closure email if status updated to "resolved"
     if updated_doc.get("status") == "resolved":
         reporter_email = updated_doc.get("reporter_email")
@@ -172,7 +182,7 @@ async def update_emergency_request(id: str, payload: EmergencyRequestUpdate):
             )
             asyncio.create_task(send_notification(to=reporter_email, subject=subject, text=text))
 
-    return format_request(updated_doc)
+    return formatted_doc
 
 @router.delete("/{id}")
 async def delete_emergency_request(id: str):

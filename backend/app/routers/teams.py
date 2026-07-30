@@ -93,7 +93,11 @@ async def update_rescue_team(id: str, payload: RescueTeamUpdate):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Rescue team with id '{id}' not found"
         )
-    return format_team(updated_doc)
+    formatted_doc = format_team(updated_doc)
+    formatted_doc["resource_type"] = "rescue_team"
+    from app.services.ws_manager import ws_manager
+    await ws_manager.broadcast("resource_update", formatted_doc)
+    return formatted_doc
 
 @router.delete("/{id}")
 async def delete_rescue_team(id: str):

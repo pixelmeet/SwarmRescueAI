@@ -7,6 +7,7 @@ from bson.errors import InvalidId
 
 from app.db.mongo import get_database
 from app.services.notify import send_notification
+from app.services.ws_manager import ws_manager
 from app.schemas.assignment import (
     AssignmentCreate,
     AssignmentResponse,
@@ -104,7 +105,23 @@ async def create_assignment(payload: AssignmentCreate):
     # 5. Flip emergency request status to "assigned"
     await db["emergency_requests"].update_one({"_id": req_obj_id}, {"$set": {"status": "assigned"}})
 
-    # 6. Send notification email to assigned resource if email exists
+    # 6. Real-time WebSocket Broadcasts
+    await ws_manager.broadcast("new_assignment", assignment_doc)
+
+    updated_req = await db["emergency_requests"].find_one({"_id": req_obj_id})
+    if updated_req:
+        updated_req["id"] = str(updated_req["_id"])
+        del updated_req["_id"]
+        await ws_manager.broadcast("status_update", updated_req)
+
+    updated_res = await db[collection_name].find_one({"_id": res_obj_id})
+    if updated_res:
+        updated_res["id"] = str(updated_res["_id"])
+        del updated_res["_id"]
+        updated_res["resource_type"] = resource_type_str
+        await ws_manager.broadcast("resource_update", updated_res)
+
+    # 7. Send notification email to assigned resource if email exists
     resource_email = res_doc.get("email") or res_doc.get("contact_email") or res_doc.get("driver_email")
     if resource_email:
         req_id_str = payload.request_id
@@ -134,3 +151,4 @@ async def auto_assign():
 @router.post("/manual-override")
 async def manual_override(assignment: AssignmentCreate):
     return {"message": "Manual override applied", "assignment": assignment.model_dump()}
+

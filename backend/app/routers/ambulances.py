@@ -91,7 +91,12 @@ async def update_ambulance(id: str, payload: AmbulanceUpdate):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Ambulance with id '{id}' not found"
         )
-    return format_ambulance(updated_doc)
+        
+    formatted_doc = format_ambulance(updated_doc)
+    formatted_doc["resource_type"] = "ambulance"
+    from app.services.ws_manager import ws_manager
+    await ws_manager.broadcast("resource_update", formatted_doc)
+    return formatted_doc
 
 @router.delete("/{id}")
 async def delete_ambulance(id: str):

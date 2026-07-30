@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Union, Dict, Any
 from fastapi import WebSocket
 
 class ConnectionManager:
@@ -13,8 +13,21 @@ class ConnectionManager:
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
 
-    async def broadcast(self, message: dict):
+    async def broadcast(self, event: Union[str, Dict[str, Any]], data: Dict[str, Any] = None):
+        if isinstance(event, str):
+            payload = {"event": event, "data": data or {}}
+        else:
+            payload = event
+
+        disconnected = []
         for connection in self.active_connections:
-            await connection.send_json(message)
+            try:
+                await connection.send_json(payload)
+            except Exception:
+                disconnected.append(connection)
+
+        for conn in disconnected:
+            self.disconnect(conn)
 
 ws_manager = ConnectionManager()
+

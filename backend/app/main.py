@@ -1,10 +1,11 @@
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.db.mongo import connect_to_mongo, close_mongo_connection, get_database
 from app.db.indexes import ensure_indexes
+from app.services.ws_manager import ws_manager
 from app.routers import (
     requests,
     teams,
@@ -67,6 +68,17 @@ class StandaloneClassifyTestInput(BaseModel):
 async def classify_test_direct(payload: StandaloneClassifyTestInput):
     return await classify_emergency(payload.description)
 
+@app.websocket("/ws/dashboard")
+async def websocket_dashboard(websocket: WebSocket):
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+    except Exception:
+        ws_manager.disconnect(websocket)
+
 @app.get("/")
 async def root():
     return {
@@ -78,3 +90,4 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+

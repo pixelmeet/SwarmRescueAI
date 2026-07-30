@@ -91,7 +91,11 @@ async def update_volunteer(id: str, payload: VolunteerUpdate):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Volunteer with id '{id}' not found"
         )
-    return format_volunteer(updated_doc)
+    formatted_doc = format_volunteer(updated_doc)
+    formatted_doc["resource_type"] = "volunteer"
+    from app.services.ws_manager import ws_manager
+    await ws_manager.broadcast("resource_update", formatted_doc)
+    return formatted_doc
 
 @router.delete("/{id}")
 async def delete_volunteer(id: str):
