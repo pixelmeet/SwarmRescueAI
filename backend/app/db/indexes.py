@@ -23,4 +23,3 @@ async def ensure_indexes(db: AsyncIOMotorDatabase):
             logger.info(f"2dsphere index '{index_name}' successfully ensured on collection '{collection_name}'.")
         except Exception as e:
             logger.error(f"Failed to create 2dsphere index on collection '{collection_name}': {e}")
-            raise e

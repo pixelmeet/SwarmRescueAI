@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,12 +15,20 @@ from app.routers import (
     auth,
 )
 
+logger = logging.getLogger("uvicorn")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup lifecycle
-    await connect_to_mongo()
-    db = get_database()
-    await ensure_indexes(db)
+    try:
+        connected = await connect_to_mongo()
+        if not connected:
+            logger.warning("MongoDB unavailable — API will start but database operations will fail until MONGO_URI is corrected")
+        else:
+            db = get_database()
+            await ensure_indexes(db)
+    except Exception as e:
+        logger.warning("MongoDB unavailable — API will start but database operations will fail until MONGO_URI is corrected")
     yield
     # Shutdown lifecycle
     await close_mongo_connection()
