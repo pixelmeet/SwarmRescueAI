@@ -5,11 +5,13 @@ import { StatsPanel } from "@/components/dashboard/StatsPanel";
 import { RequestQueue } from "@/components/dashboard/RequestQueue";
 import {
   EmergencyRequestResponse,
-  RecommendationMatch,
+  RecommendationCandidate,
+  RequestRecommendations,
   RescueTeam,
   Ambulance,
   Hospital,
   Volunteer,
+  ResourceType,
   getRequestRecommendations,
   createAssignment,
   listTeams,
@@ -18,9 +20,16 @@ import {
   listVolunteers,
 } from "@/lib/api";
 
+const EMPTY_RECOMMENDATIONS: RequestRecommendations = {
+  rescue_teams: [],
+  ambulances: [],
+  hospitals: [],
+  volunteers: [],
+};
+
 export default function AdminDashboardPage() {
   const [selectedRequest, setSelectedRequest] = useState<EmergencyRequestResponse | null>(null);
-  const [recommendations, setRecommendations] = useState<RecommendationMatch[]>([]);
+  const [recommendations, setRecommendations] = useState<RequestRecommendations>(EMPTY_RECOMMENDATIONS);
   const [loadingRecs, setLoadingRecs] = useState<boolean>(false);
   const [recError, setRecError] = useState<string | null>(null);
 
@@ -57,14 +66,14 @@ export default function AdminDashboardPage() {
 
   const handleSelectRequest = async (req: EmergencyRequestResponse) => {
     setSelectedRequest(req);
-    setRecommendations([]);
+    setRecommendations(EMPTY_RECOMMENDATIONS);
     setRecError(null);
     setDispatchStatus(null);
     setLoadingRecs(true);
 
     try {
       const matches = await getRequestRecommendations(req.id);
-      setRecommendations(matches);
+      setRecommendations(matches || EMPTY_RECOMMENDATIONS);
     } catch (err) {
       console.error("Failed to load recommendations:", err);
       setRecError(err instanceof Error ? err.message : "Failed to load resource recommendations.");
@@ -73,20 +82,20 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const handleDispatch = async (rec: RecommendationMatch) => {
+  const handleDispatch = async (candidate: RecommendationCandidate, resourceType: ResourceType) => {
     if (!selectedRequest) return;
-    setDispatchingId(rec.resource_id);
+    setDispatchingId(candidate.resource_id);
     setDispatchStatus(null);
 
     try {
       const res = await createAssignment({
         request_id: selectedRequest.id,
-        resource_type: rec.resource_type,
-        resource_id: rec.resource_id,
-        eta_minutes: rec.eta_minutes,
+        resource_type: resourceType,
+        resource_id: candidate.resource_id,
+        eta_minutes: candidate.eta_minutes || 10,
       });
 
-      setDispatchStatus(`Successfully assigned ${rec.resource_name} (ID: ${res.id})`);
+      setDispatchStatus(`Successfully assigned ${candidate.name} (${resourceType.replace("_", " ")}) — Assignment ID: ${res.id}`);
       // Update local status
       setSelectedRequest({ ...selectedRequest, status: "assigned" });
       loadResources();
@@ -96,6 +105,71 @@ export default function AdminDashboardPage() {
     } finally {
       setDispatchingId(null);
     }
+  };
+
+  const totalCandidates =
+    (recommendations.rescue_teams?.length || 0) +
+    (recommendations.ambulances?.length || 0) +
+    (recommendations.hospitals?.length || 0) +
+    (recommendations.volunteers?.length || 0);
+
+  const renderRecommendationSection = (
+    title: string,
+    candidates: RecommendationCandidate[],
+    resourceType: ResourceType,
+    badgeColor: string
+  ) => {
+    if (!candidates || candidates.length === 0) return null;
+
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+            <span className={`w-2 h-2 rounded-full ${badgeColor}`}></span>
+            {title} ({candidates.length})
+          </span>
+        </div>
+        <div className="space-y-2">
+          {candidates.map((cand, idx) => (
+            <div
+              key={cand.resource_id}
+              className="p-3 bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-xl flex items-center justify-between gap-3 text-xs"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-7 h-7 rounded-full bg-blue-900/60 text-blue-400 border border-blue-700 flex items-center justify-center font-bold text-xs shrink-0">
+                  #{idx + 1}
+                </div>
+                <div>
+                  <div className="font-bold text-slate-100">{cand.name}</div>
+                  <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
+                    <span className="text-emerald-400 font-medium">{cand.distance_km} km away</span>
+                    <span>&bull;</span>
+                    <span className="text-amber-400 font-medium">
+                      ETA: {cand.eta_minutes !== null ? `${cand.eta_minutes} min` : "N/A"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <div className="text-xs font-bold text-blue-400">{Math.round(cand.score * 100)}%</div>
+                  <div className="text-[10px] text-slate-500">Score</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleDispatch(cand, resourceType)}
+                  disabled={dispatchingId === cand.resource_id || selectedRequest?.status === "assigned"}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold rounded-lg text-xs transition shadow shrink-0 cursor-pointer"
+                >
+                  {dispatchingId === cand.resource_id ? "Assigning..." : "Assign"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -133,7 +207,7 @@ export default function AdminDashboardPage() {
             <h3 className="font-bold text-sm text-slate-200 uppercase tracking-wider flex items-center justify-between">
               <span>Intelligent Resource Dispatch Engine</span>
               {selectedRequest && (
-                <span className="text-xs text-blue-400 font-mono">Request: {selectedRequest.id.substring(0, 8)}</span>
+                <span className="text-xs text-blue-400 font-mono">Request ID: {selectedRequest.id.substring(0, 8)}</span>
               )}
             </h3>
 
@@ -142,7 +216,7 @@ export default function AdminDashboardPage() {
                 <svg className="w-10 h-10 text-slate-600 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
                 </svg>
-                <p>Select any emergency incident from the left queue to view AI recommendations and dispatch resources.</p>
+                <p>Select an emergency incident from the left queue to view AI recommendations and dispatch resources.</p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -172,51 +246,16 @@ export default function AdminDashboardPage() {
                   <div className="p-3 bg-red-950/60 border border-red-800 rounded-lg text-xs text-red-300">
                     {recError}
                   </div>
-                ) : recommendations.length === 0 ? (
+                ) : totalCandidates === 0 ? (
                   <div className="p-4 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-400 text-center">
                     No available resources matched for this request location/skills.
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                      Recommended Units (Ranked by Score)
-                    </span>
-                    {recommendations.map((rec, idx) => (
-                      <div
-                        key={rec.resource_id}
-                        className="p-3 bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-xl flex items-center justify-between gap-3 text-xs"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-7 h-7 rounded-full bg-blue-900/60 text-blue-400 border border-blue-700 flex items-center justify-center font-bold text-xs shrink-0">
-                            #{idx + 1}
-                          </div>
-                          <div>
-                            <div className="font-bold text-slate-100">{rec.resource_name}</div>
-                            <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
-                              <span className="uppercase text-[10px] font-semibold text-slate-500">{rec.resource_type}</span>
-                              <span>&bull;</span>
-                              <span className="text-emerald-400">{rec.distance_km} km away</span>
-                              <span>&bull;</span>
-                              <span className="text-amber-400">ETA {rec.eta_minutes} min</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-3">
-                          <div className="text-right">
-                            <div className="text-xs font-bold text-blue-400">{Math.round(rec.composite_score * 100)}%</div>
-                            <div className="text-[10px] text-slate-500">Score</div>
-                          </div>
-                          <button
-                            onClick={() => handleDispatch(rec)}
-                            disabled={dispatchingId === rec.resource_id || selectedRequest.status === "assigned"}
-                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold rounded-lg text-xs transition shadow shrink-0"
-                          >
-                            {dispatchingId === rec.resource_id ? "Dispatching..." : "Dispatch"}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="space-y-4">
+                    {renderRecommendationSection("Rescue Teams", recommendations.rescue_teams, "rescue_team", "bg-red-500")}
+                    {renderRecommendationSection("Ambulances", recommendations.ambulances, "ambulance", "bg-amber-500")}
+                    {renderRecommendationSection("Hospitals", recommendations.hospitals, "hospital", "bg-blue-500")}
+                    {renderRecommendationSection("Volunteers", recommendations.volunteers, "volunteer", "bg-emerald-500")}
                   </div>
                 )}
               </div>
@@ -233,8 +272,9 @@ export default function AdminDashboardPage() {
                 {(["teams", "ambulances", "hospitals", "volunteers"] as const).map((tab) => (
                   <button
                     key={tab}
+                    type="button"
                     onClick={() => setActiveTab(tab)}
-                    className={`px-3 py-1 rounded-md font-semibold capitalize transition ${
+                    className={`px-3 py-1 rounded-md font-semibold capitalize transition cursor-pointer ${
                       activeTab === tab ? "bg-slate-800 text-white border border-slate-700" : "text-slate-400 hover:text-slate-200"
                     }`}
                   >

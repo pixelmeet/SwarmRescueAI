@@ -40,19 +40,19 @@ export interface EmergencyRequestResponse {
   created_at: string;
 }
 
-export interface RecommendationMatch {
+export interface RecommendationCandidate {
   resource_id: string;
-  resource_name: string;
-  resource_type: ResourceType;
-  composite_score: number;
+  name: string;
   distance_km: number;
-  eta_minutes: number;
-  skill_match_ratio: number;
-  breakdown: {
-    distance_score: number;
-    skill_score: number;
-    availability_score: number;
-  };
+  score: number;
+  eta_minutes: number | null;
+}
+
+export interface RequestRecommendations {
+  rescue_teams: RecommendationCandidate[];
+  ambulances: RecommendationCandidate[];
+  hospitals: RecommendationCandidate[];
+  volunteers: RecommendationCandidate[];
 }
 
 export interface AssignmentCreate {
@@ -165,8 +165,8 @@ export async function listRequests(filters?: {
   return fetchApi<EmergencyRequestResponse[]>(`/api/requests${queryString ? `?${queryString}` : ""}`);
 }
 
-export async function getRequestRecommendations(id: string): Promise<RecommendationMatch[]> {
-  return fetchApi<RecommendationMatch[]>(`/api/requests/${id}/recommendations`);
+export async function getRequestRecommendations(id: string): Promise<RequestRecommendations> {
+  return fetchApi<RequestRecommendations>(`/api/requests/${id}/recommendations`);
 }
 
 /* ==================== ASSIGNMENTS ==================== */
