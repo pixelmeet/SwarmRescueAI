@@ -2,8 +2,34 @@
 
 import React, { useState } from "react";
 import { LocationPicker } from "../map/LocationPicker";
-import { createRequest, EmergencyRequestResponse } from "@/lib/api";
+import { createRequest, EmergencyRequestResponse, fetchApi, Severity, Category } from "@/lib/api";
 import { validateEmergencyReport } from "@/lib/validators";
+import {
+  SeverityBadge,
+  CategoryBadge,
+  RequestStatusBadge,
+} from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Input, Textarea } from "@/components/ui/Input";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Sparkles,
+  MapPin,
+  FileText,
+  Mail,
+  User,
+  Send,
+  Loader2,
+  RefreshCw,
+} from "lucide-react";
+
+interface ClassifyPreview {
+  severity: Severity;
+  category: Category;
+  required_skills: string[];
+  reasoning: string;
+}
 
 export function EmergencyReportForm() {
   const [description, setDescription] = useState("");
@@ -14,17 +40,38 @@ export function EmergencyReportForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [apiError, setApiError] = useState<string | null>(null);
-  const [successResponse, setSuccessResponse] = useState<EmergencyRequestResponse | null>(null);
+  const [successResponse, setSuccessResponse] =
+    useState<EmergencyRequestResponse | null>(null);
+
+  // Live AI Classification Preview state
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewData, setPreviewData] = useState<ClassifyPreview | null>(null);
 
   const handleLocationSelect = (loc: { lat: number; lng: number }) => {
     setLocation(loc);
-    // Clear location error when user picks a location
     if (formErrors.location) {
       setFormErrors((prev) => {
         const updated = { ...prev };
         delete updated.location;
         return updated;
       });
+    }
+  };
+
+  // Trigger live AI triage preview
+  const handleTestClassify = async () => {
+    if (!description.trim() || description.trim().length < 10) return;
+    setPreviewLoading(true);
+    try {
+      const res = await fetchApi<ClassifyPreview>("/api/requests/classify-test", {
+        method: "POST",
+        body: JSON.stringify({ description: description.trim() }),
+      });
+      setPreviewData(res);
+    } catch (err) {
+      console.warn("Classify test error:", err);
+    } finally {
+      setPreviewLoading(false);
     }
   };
 
@@ -51,14 +98,13 @@ export function EmergencyReportForm() {
     try {
       if (!location) throw new Error("Location is required.");
 
-      // Submit GeoJSON location with description and reporter fields (no severity/category)
       const payload = {
         description: description.trim(),
         reporter_name: reporterName.trim() || "Anonymous Citizen",
         reporter_email: reporterEmail.trim(),
         location: {
           type: "Point" as const,
-          coordinates: [location.lng, location.lat] as [number, number], // GeoJSON [longitude, latitude]
+          coordinates: [location.lng, location.lat] as [number, number],
         },
       };
 
@@ -66,7 +112,10 @@ export function EmergencyReportForm() {
       setSuccessResponse(response);
     } catch (err: unknown) {
       console.error("Emergency report submission error:", err);
-      const message = err instanceof Error ? err.message : "Failed to submit emergency report. Please try again.";
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Failed to submit emergency report. Please try again.";
       setApiError(message);
     } finally {
       setIsSubmitting(false);
@@ -81,74 +130,61 @@ export function EmergencyReportForm() {
     setSuccessResponse(null);
     setApiError(null);
     setFormErrors({});
-  };
-
-  // Helper badge styles for severity
-  const getSeverityBadgeClass = (severity: string) => {
-    switch (severity?.toLowerCase()) {
-      case "critical":
-        return "bg-red-600 text-white border-red-400 font-bold uppercase tracking-wider animate-pulse";
-      case "high":
-        return "bg-orange-600 text-white border-orange-400 font-bold uppercase tracking-wider";
-      case "medium":
-        return "bg-amber-600 text-white border-amber-400 font-semibold uppercase tracking-wider";
-      case "low":
-        return "bg-emerald-600 text-white border-emerald-400 font-semibold uppercase tracking-wider";
-      default:
-        return "bg-slate-700 text-slate-200 border-slate-500 font-semibold uppercase tracking-wider";
-    }
+    setPreviewData(null);
   };
 
   // Success Screen View
   if (successResponse) {
     return (
-      <div className="bg-slate-900 border-2 border-emerald-500 rounded-xl p-6 shadow-2xl text-slate-100 space-y-6">
-        <div className="flex items-center gap-3 border-b border-slate-800 pb-4">
+      <div className="bg-surface-primary border-2 border-emerald-500 rounded-card p-6 md:p-8 shadow-2xl text-slate-100 space-y-6 animate-fade-in">
+        <div className="flex items-center gap-3 border-b border-[var(--border-primary)] pb-4">
           <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 flex items-center justify-center shrink-0">
-            <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
+            <CheckCircle2 className="w-7 h-7" />
           </div>
           <div>
-            <h2 className="text-2xl font-extrabold text-white tracking-tight">Emergency Report Logged</h2>
-            <p className="text-xs text-emerald-400 font-medium">First responders have been notified via SwarmRescue AI</p>
+            <h2 className="text-xl md:text-2xl font-extrabold text-white tracking-tight">
+              Emergency Report Transmitted
+            </h2>
+            <p className="text-xs text-emerald-400 font-medium">
+              First responders notified via SwarmRescue AI real-time socket
+            </p>
           </div>
         </div>
 
         {/* Request Identifier */}
-        <div className="bg-slate-950 p-4 rounded-lg border border-slate-800 space-y-1">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Report Confirmation ID</span>
-          <div className="text-lg font-mono font-bold text-emerald-400 select-all tracking-wide break-all">
+        <div className="bg-slate-950 p-4 rounded-card border border-[var(--border-primary)] space-y-1">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">
+            Report Confirmation ID
+          </span>
+          <div className="text-lg font-mono font-extrabold text-emerald-400 select-all tracking-wide break-all">
             {successResponse.id}
           </div>
         </div>
 
         {/* AI Auto-Classified Details */}
-        <div className="space-y-3 bg-slate-950/60 p-4 rounded-lg border border-slate-800/80">
+        <div className="space-y-3 bg-slate-950/60 p-4 rounded-card border border-slate-800">
           <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-blue-500 animate-ping"></span>
-            Swarm AI Auto-Classification
+            <Sparkles className="w-4 h-4 text-primary animate-pulse" />
+            Groq Llama-3.3 AI Triage Classification
           </h3>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 pt-1">
             <div>
               <span className="text-[11px] text-slate-400 block mb-1">Severity Level</span>
-              <span className={`inline-block px-3 py-1 text-xs rounded border ${getSeverityBadgeClass(successResponse.severity)}`}>
-                {successResponse.severity}
-              </span>
+              <SeverityBadge severity={successResponse.severity} pulse={true} size="sm" />
             </div>
             <div>
               <span className="text-[11px] text-slate-400 block mb-1">Incident Category</span>
-              <span className="inline-block px-3 py-1 text-xs font-bold text-white bg-slate-800 border border-slate-600 rounded uppercase tracking-wider">
-                {successResponse.category}
-              </span>
+              <CategoryBadge category={successResponse.category} size="sm" />
             </div>
           </div>
 
           {successResponse.reasoning && (
-            <div className="pt-2 border-t border-slate-900">
-              <span className="text-[11px] text-slate-400 block mb-0.5">AI Analysis Reasoning</span>
-              <p className="text-xs text-slate-300 italic bg-slate-900/90 p-2.5 rounded border border-slate-800">
+            <div className="pt-2.5 border-t border-slate-900">
+              <span className="text-[11px] text-slate-400 block mb-1 font-medium">
+                AI Diagnostic Reasoning
+              </span>
+              <p className="text-xs text-slate-300 italic bg-slate-900 p-3 rounded-card border border-slate-800 leading-relaxed">
                 "{successResponse.reasoning}"
               </p>
             </div>
@@ -156,18 +192,24 @@ export function EmergencyReportForm() {
         </div>
 
         {/* Summary info */}
-        <div className="text-xs text-slate-400 space-y-1">
-          <p><strong className="text-slate-300">Reporter:</strong> {successResponse.reporter_name} ({successResponse.reporter_email})</p>
-          <p><strong className="text-slate-300">Coordinates:</strong> {successResponse.location.coordinates[1].toFixed(5)}, {successResponse.location.coordinates[0].toFixed(5)}</p>
+        <div className="text-xs text-slate-400 space-y-1 font-mono bg-slate-950/40 p-3 rounded-card border border-slate-900">
+          <p>
+            <strong className="text-slate-300">Reporter:</strong> {successResponse.reporter_name} ({successResponse.reporter_email})
+          </p>
+          <p>
+            <strong className="text-slate-300">Coordinates:</strong> [{successResponse.location.coordinates[1].toFixed(5)}, {successResponse.location.coordinates[0].toFixed(5)}]
+          </p>
         </div>
 
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="lg"
           onClick={handleReset}
-          className="w-full py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-lg border border-slate-600 transition text-sm flex items-center justify-center gap-2 shadow-lg"
+          className="w-full"
+          icon={<RefreshCw className="w-4 h-4" />}
         >
           Submit Another Emergency Report
-        </button>
+        </Button>
       </div>
     );
   }
@@ -176,10 +218,8 @@ export function EmergencyReportForm() {
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* API Error Alert */}
       {apiError && (
-        <div className="p-4 bg-red-950/80 border-2 border-red-600 rounded-lg text-red-200 text-sm flex items-start gap-3 shadow-lg">
-          <svg className="w-5 h-5 text-red-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
+        <div className="p-4 bg-red-950/80 border-2 border-red-600 rounded-card text-red-200 text-sm flex items-start gap-3 shadow-lg">
+          <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
           <div className="flex-1">
             <h4 className="font-bold text-red-100">Submission Error</h4>
             <p className="text-xs text-red-300 mt-0.5">{apiError}</p>
@@ -187,44 +227,110 @@ export function EmergencyReportForm() {
         </div>
       )}
 
-      {/* Description Field */}
+      {/* Form Step Indicators */}
+      <div className="grid grid-cols-3 gap-2 pb-2 text-[11px] font-bold border-b border-slate-800">
+        <div className="flex items-center gap-1.5 text-primary">
+          <span className="w-5 h-5 rounded-full bg-primary-muted border border-blue-600 flex items-center justify-center text-[10px]">
+            1
+          </span>
+          <span>Describe</span>
+        </div>
+        <div className="flex items-center gap-1.5 text-slate-400">
+          <span className="w-5 h-5 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px]">
+            2
+          </span>
+          <span>Location</span>
+        </div>
+        <div className="flex items-center gap-1.5 text-slate-400">
+          <span className="w-5 h-5 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px]">
+            3
+          </span>
+          <span>Contact</span>
+        </div>
+      </div>
+
+      {/* Description Field with Live AI Preview */}
       <div>
-        <label htmlFor="description" className="block text-xs font-bold uppercase tracking-wider text-slate-200 mb-1.5">
-          Emergency Description <span className="text-red-500">*</span>
-        </label>
-        <textarea
+        <div className="flex justify-between items-center mb-1.5">
+          <label
+            htmlFor="description"
+            className="block text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5"
+          >
+            <FileText className="w-3.5 h-3.5 text-red-400" />
+            Emergency Description <span className="text-red-500">*</span>
+          </label>
+          <span className="text-[11px] font-mono text-slate-500">
+            {description.length} / 500 chars
+          </span>
+        </div>
+
+        <Textarea
           id="description"
           name="description"
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={(e) => {
+            if (e.target.value.length <= 500) {
+              setDescription(e.target.value);
+            }
+          }}
+          onBlur={handleTestClassify}
           placeholder="Provide urgent details (e.g. 'Flash flood trapping 3 people on roof near main market...')"
           rows={4}
           disabled={isSubmitting}
-          className={`w-full p-3.5 bg-slate-950 border ${
-            formErrors.description ? "border-red-500 focus:ring-red-500" : "border-slate-700 focus:ring-red-500"
-          } rounded-lg text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 transition shadow-inner disabled:opacity-50`}
+          error={formErrors.description}
         />
-        {formErrors.description ? (
-          <p className="mt-1 text-xs text-red-400 font-semibold">{formErrors.description}</p>
-        ) : (
-          <p className="mt-1 text-[11px] text-slate-400">Describe what happened, hazards present, or victims involved.</p>
-        )}
+
+        {/* Live AI Classification Preview Pill */}
+        <div className="mt-2 flex items-center justify-between min-h-[28px]">
+          {previewLoading ? (
+            <span className="text-[11px] text-slate-400 flex items-center gap-1.5 font-mono animate-pulse">
+              <Sparkles className="w-3.5 h-3.5 text-primary animate-spin" />
+              Running Groq AI Triage Preview...
+            </span>
+          ) : previewData ? (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-[11px] text-slate-400 font-medium">
+                AI Preview:
+              </span>
+              <SeverityBadge severity={previewData.severity} size="xs" />
+              <CategoryBadge category={previewData.category} size="xs" />
+            </div>
+          ) : (
+            <span className="text-[11px] text-slate-500">
+              Tip: AI auto-classifies severity on description blur.
+            </span>
+          )}
+
+          {description.length >= 10 && !previewData && !previewLoading && (
+            <button
+              type="button"
+              onClick={handleTestClassify}
+              className="text-[11px] text-primary hover:text-primary-hover font-semibold flex items-center gap-1 cursor-pointer"
+            >
+              <Sparkles className="w-3 h-3" /> Preview AI Triage
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Location Picker */}
       <div>
+        <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-200 mb-1.5">
+          <MapPin className="w-3.5 h-3.5 text-red-400" />
+          Incident Location <span className="text-red-500">*</span>
+        </div>
         <LocationPicker onLocationSelect={handleLocationSelect} />
         {formErrors.location && (
-          <p className="mt-1.5 text-xs text-red-400 font-semibold">{formErrors.location}</p>
+          <p className="mt-1.5 text-xs text-error font-semibold">
+            {formErrors.location}
+          </p>
         )}
       </div>
 
       {/* Reporter Email Field */}
       <div>
-        <label htmlFor="reporter_email" className="block text-xs font-bold uppercase tracking-wider text-slate-200 mb-1.5">
-          Reporter Email Address <span className="text-red-500">*</span>
-        </label>
-        <input
+        <Input
+          label="Reporter Email Address *"
           id="reporter_email"
           name="reporter_email"
           type="email"
@@ -232,23 +338,14 @@ export function EmergencyReportForm() {
           onChange={(e) => setReporterEmail(e.target.value)}
           placeholder="your.email@example.com"
           disabled={isSubmitting}
-          className={`w-full p-3.5 bg-slate-950 border ${
-            formErrors.reporter_email ? "border-red-500 focus:ring-red-500" : "border-slate-700 focus:ring-red-500"
-          } rounded-lg text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 transition shadow-inner disabled:opacity-50`}
+          error={formErrors.reporter_email}
         />
-        {formErrors.reporter_email ? (
-          <p className="mt-1 text-xs text-red-400 font-semibold">{formErrors.reporter_email}</p>
-        ) : (
-          <p className="mt-1 text-[11px] text-slate-400">Required for receiving real-time status notifications.</p>
-        )}
       </div>
 
       {/* Reporter Name Field */}
       <div>
-        <label htmlFor="reporter_name" className="block text-xs font-bold uppercase tracking-wider text-slate-200 mb-1.5">
-          Reporter Name <span className="text-slate-500 font-normal text-[11px] uppercase">(Optional)</span>
-        </label>
-        <input
+        <Input
+          label="Reporter Name (Optional)"
           id="reporter_name"
           name="reporter_name"
           type="text"
@@ -256,33 +353,20 @@ export function EmergencyReportForm() {
           onChange={(e) => setReporterName(e.target.value)}
           placeholder="Jane Doe"
           disabled={isSubmitting}
-          className="w-full p-3.5 bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-red-500 transition shadow-inner disabled:opacity-50"
         />
       </div>
 
       {/* Submit Button */}
-      <button
+      <Button
         type="submit"
-        disabled={isSubmitting}
-        className="w-full py-4 px-6 bg-red-600 hover:bg-red-500 active:bg-red-700 text-white font-extrabold text-base rounded-lg transition-all shadow-xl shadow-red-950/50 flex items-center justify-center gap-3 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer uppercase tracking-wider"
+        variant="danger"
+        size="lg"
+        loading={isSubmitting}
+        className="w-full uppercase tracking-wider py-4 font-black text-base shadow-xl"
+        icon={<Send className="w-5 h-5" />}
       >
-        {isSubmitting ? (
-          <>
-            <svg className="animate-spin h-5 w-5 text-white" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-            </svg>
-            <span>Submitting & Classifying Emergency...</span>
-          </>
-        ) : (
-          <>
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            <span>Transmit Emergency Report</span>
-          </>
-        )}
-      </button>
+        Transmit Emergency Report
+      </Button>
     </form>
   );
 }
