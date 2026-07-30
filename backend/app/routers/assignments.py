@@ -70,7 +70,21 @@ async def create_assignment(payload: AssignmentCreate):
             detail=f"Resource with id '{payload.resource_id}' not found in '{collection_name}'"
         )
 
-    # 3. Create Assignment document
+    # 3. Reserve resource (decrement hospital beds or set status to busy)
+    if collection_name == "hospitals":
+        update_result = await db["hospitals"].update_one(
+            {"_id": res_obj_id, "available_beds": {"$gt": 0}},
+            {"$inc": {"available_beds": -1}}
+        )
+        if update_result.modified_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="No available beds at this hospital"
+            )
+    else:
+        await db[collection_name].update_one({"_id": res_obj_id}, {"$set": {"status": "busy"}})
+
+    # 4. Create Assignment document
     now = datetime.utcnow()
     status_val = payload.status.value if isinstance(payload.status, Enum) else str(payload.status)
     assignment_doc = {
@@ -84,9 +98,6 @@ async def create_assignment(payload: AssignmentCreate):
 
     result = await db["assignments"].insert_one(assignment_doc)
     assignment_doc["id"] = str(result.inserted_id)
-
-    # 4. Flip assigned resource status to "busy"
-    await db[collection_name].update_one({"_id": res_obj_id}, {"$set": {"status": "busy"}})
 
     # 5. Flip emergency request status to "assigned"
     await db["emergency_requests"].update_one({"_id": req_obj_id}, {"$set": {"status": "assigned"}})
