@@ -54,6 +54,7 @@ app.include_router(teams.router, prefix="/api/teams", tags=["Teams"])
 app.include_router(ambulances.router, prefix="/api/ambulances", tags=["Ambulances"])
 app.include_router(hospitals.router, prefix="/api/hospitals", tags=["Hospitals"])
 app.include_router(volunteers.router, prefix="/api/volunteers", tags=["Volunteers"])
+app.include_router(assignments.router, prefix="/api/assignments", tags=["Assignments"])
 
 app.include_router(requests.router, prefix="/api/v1/requests", tags=["Requests (v1)"])
 app.include_router(teams.router, prefix="/api/v1/teams", tags=["Teams (v1)"])

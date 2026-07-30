@@ -6,6 +6,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 
 from app.db.mongo import get_database
+from app.services.scoring_engine import find_best_matches
 from app.schemas.request import (
     EmergencyRequestCreate,
     EmergencyRequestUpdate,
@@ -52,6 +53,11 @@ async def list_emergency_requests(status: Optional[RequestStatusEnum] = Query(No
     async for doc in cursor:
         requests_list.append(format_request(doc))
     return requests_list
+
+@router.get("/{id}/recommendations")
+async def get_request_recommendations(id: str):
+    db = get_database()
+    return await find_best_matches(db, id)
 
 @router.get("/{id}", response_model=EmergencyRequestResponse)
 async def get_emergency_request(id: str):
