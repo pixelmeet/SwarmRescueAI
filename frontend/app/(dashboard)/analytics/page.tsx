@@ -144,10 +144,16 @@ export default function AnalyticsDashboardPage() {
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                 Avg Triage &rarr; Assignment
               </p>
-              <div className="text-3xl font-extrabold text-blue-400 font-telemetry">
-                {data?.avg_time_creation_to_assignment || 0}{" "}
-                <span className="text-sm font-normal text-slate-400">mins</span>
-              </div>
+              {data?.avg_time_creation_to_assignment !== null && data?.avg_time_creation_to_assignment !== undefined ? (
+                <div className="text-3xl font-extrabold text-blue-400 font-telemetry">
+                  {data.avg_time_creation_to_assignment}{" "}
+                  <span className="text-sm font-normal text-slate-400">mins</span>
+                </div>
+              ) : (
+                <div className="text-xl font-medium text-slate-500 font-telemetry italic py-1">
+                  No data yet
+                </div>
+              )}
               <p className="text-[11px] text-slate-500 flex items-center gap-1 font-mono">
                 <Clock className="w-3 h-3 text-primary" />
                 Submission to resource dispatch
@@ -158,10 +164,16 @@ export default function AnalyticsDashboardPage() {
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                 Avg Assignment &rarr; Resolution
               </p>
-              <div className="text-3xl font-extrabold text-emerald-400 font-telemetry">
-                {data?.avg_time_assignment_to_resolution || 0}{" "}
-                <span className="text-sm font-normal text-slate-400">mins</span>
-              </div>
+              {data?.avg_time_assignment_to_resolution !== null && data?.avg_time_assignment_to_resolution !== undefined ? (
+                <div className="text-3xl font-extrabold text-emerald-400 font-telemetry">
+                  {data.avg_time_assignment_to_resolution}{" "}
+                  <span className="text-sm font-normal text-slate-400">mins</span>
+                </div>
+              ) : (
+                <div className="text-xl font-medium text-slate-500 font-telemetry italic py-1">
+                  No data yet
+                </div>
+              )}
               <p className="text-[11px] text-slate-500 flex items-center gap-1 font-mono">
                 <CheckCircle2 className="w-3 h-3 text-emerald-400" />
                 Field arrival to incident resolution

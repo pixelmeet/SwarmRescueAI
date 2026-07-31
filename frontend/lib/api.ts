@@ -118,12 +118,13 @@ export interface Volunteer {
 export interface AnalyticsData {
   total_requests: number;
   resolved_requests: number;
-  avg_time_creation_to_assignment: number;
-  avg_time_assignment_to_resolution: number;
+  avg_time_creation_to_assignment: number | null;
+  avg_time_assignment_to_resolution: number | null;
   request_count_by_category: Record<Category | string, number>;
   request_count_by_severity: Record<Severity | string, number>;
   resource_utilization_pct: number;
   active_resources_count: number;
+  has_sufficient_data: boolean;
 }
 
 // Note: In production applications, JWT should be stored in httpOnly, SameSite=Strict cookies to mitigate XSS vulnerabilities.

@@ -57,8 +57,8 @@ async def get_analytics():
             except Exception:
                 pass
 
-    avg_creation_to_assignment = round(sum(assign_diffs) / len(assign_diffs), 1) if assign_diffs else (4.2 if total_requests > 0 else 0.0)
-    avg_assignment_to_resolution = round(sum(resolve_diffs) / len(resolve_diffs), 1) if resolve_diffs else (18.5 if resolved_count > 0 else 0.0)
+    avg_creation_to_assignment = round(sum(assign_diffs) / len(assign_diffs), 1) if assign_diffs else None
+    avg_assignment_to_resolution = round(sum(resolve_diffs) / len(resolve_diffs), 1) if resolve_diffs else None
 
     # Calculate resource utilization across all collections
     teams = await db["rescue_teams"].find({}).to_list(length=1000)
@@ -80,4 +80,5 @@ async def get_analytics():
         "request_count_by_severity": severity_counts,
         "resource_utilization_pct": resource_utilization_pct,
         "active_resources_count": total_resources,
+        "has_sufficient_data": len(resolve_diffs) > 0,
     }
