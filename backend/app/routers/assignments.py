@@ -2,14 +2,14 @@ import asyncio
 from datetime import datetime
 from enum import Enum
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, status, Query, Depends
+from fastapi import APIRouter, HTTPException, status, Query, Depends, Header
 from bson import ObjectId
 from bson.errors import InvalidId
 
 from app.db.mongo import get_database
 from app.services.notify import send_notification
 from app.services.ws_manager import ws_manager
-from app.core.deps import get_current_admin
+from app.core.deps import get_current_admin, verify_resource_access_code
 from app.schemas.assignment import (
     AssignmentCreate,
     AssignmentResponse,
@@ -173,7 +173,14 @@ async def create_assignment(payload: AssignmentCreate, admin: dict = Depends(get
     return assignment_doc
 
 @router.patch("/{id}/status", response_model=AssignmentResponse)
-async def update_assignment_status(id: str, payload: AssignmentStatusUpdate):
+async def update_assignment_status(
+    id: str,
+    payload: AssignmentStatusUpdate,
+    resource_id: Optional[str] = Query(None),
+    access_code: Optional[str] = Query(None),
+    x_resource_id: Optional[str] = Header(None, alias="X-Resource-ID"),
+    x_access_code: Optional[str] = Header(None, alias="X-Access-Code"),
+):
     db = get_database()
     try:
         assign_obj_id = ObjectId(id)
@@ -189,6 +196,27 @@ async def update_assignment_status(id: str, payload: AssignmentStatusUpdate):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Assignment with id '{id}' not found"
         )
+
+    acting_resource_id = payload.resource_id or resource_id or x_resource_id
+    acting_access_code = payload.access_code or access_code or x_access_code
+
+    if not acting_resource_id or not acting_access_code:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Resource ID and access_code are required to update assignment status"
+        )
+
+    if assignment.get("resource_id") != acting_resource_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Resource ID does not match assigned resource"
+        )
+
+    await verify_resource_access_code(
+        resource_type=assignment.get("resource_type"),
+        resource_id=acting_resource_id,
+        access_code=acting_access_code,
+    )
 
     new_status = payload.status.value if isinstance(payload.status, Enum) else str(payload.status)
     now = datetime.utcnow()

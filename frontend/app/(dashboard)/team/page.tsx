@@ -29,6 +29,7 @@ interface UnifiedResource {
   name: string;
   type: string;
   kind: "rescue_team" | "ambulance" | "volunteer";
+  accessCode?: string;
 }
 
 function TeamDashboardContent() {
@@ -71,18 +72,21 @@ function TeamDashboardContent() {
             name: t.name,
             type: t.type,
             kind: "rescue_team" as const,
+            accessCode: t.access_code,
           })),
           ...aList.map((a: Ambulance) => ({
             id: a.id,
             name: `Ambulance — ${a.driver_name}`,
             type: a.plate_number,
             kind: "ambulance" as const,
+            accessCode: a.access_code,
           })),
           ...vList.map((v: Volunteer) => ({
             id: v.id,
             name: `Volunteer — ${v.name}`,
             type: v.email,
             kind: "volunteer" as const,
+            accessCode: v.access_code,
           })),
         ];
 
@@ -133,12 +137,14 @@ function TeamDashboardContent() {
   // Handle assignment status transition (en_route -> completed)
   const handleStatusUpdate = async (
     assignmentId: string,
-    newStatus: AssignmentStatus
+    newStatus: AssignmentStatus,
+    targetResourceId: string
   ) => {
     setUpdatingId(assignmentId);
 
     try {
-      await updateAssignmentStatus(assignmentId, newStatus);
+      const res = resources.find((r) => r.id === targetResourceId);
+      await updateAssignmentStatus(assignmentId, newStatus, targetResourceId, res?.accessCode);
 
       const statusText =
         newStatus === "en_route"
@@ -333,7 +339,7 @@ function TeamDashboardContent() {
                         variant="primary"
                         size="md"
                         loading={isUpdating}
-                        onClick={() => handleStatusUpdate(assignment.id, "en_route")}
+                        onClick={() => handleStatusUpdate(assignment.id, "en_route", assignment.resource_id)}
                         className="w-full font-bold"
                         icon={<Navigation className="w-4 h-4" />}
                       >
@@ -346,7 +352,7 @@ function TeamDashboardContent() {
                         variant="success"
                         size="md"
                         loading={isUpdating}
-                        onClick={() => handleStatusUpdate(assignment.id, "completed")}
+                        onClick={() => handleStatusUpdate(assignment.id, "completed", assignment.resource_id)}
                         className="w-full font-bold"
                         icon={<CheckCircle2 className="w-4 h-4" />}
                       >

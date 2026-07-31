@@ -1,13 +1,14 @@
 import asyncio
 from typing import List, Optional
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, status, Query
+from fastapi import APIRouter, HTTPException, status, Query, Depends
 from pymongo import ReturnDocument
 from bson import ObjectId
 from bson.errors import InvalidId
 
 from pydantic import BaseModel
 from app.db.mongo import get_database
+from app.core.deps import get_current_admin
 from app.services.scoring_engine import find_best_matches
 from app.services.severity_classifier import classify_emergency
 from app.services.notify import send_notification
@@ -131,7 +132,7 @@ async def get_emergency_request(id: str):
     return format_request(doc)
 
 @router.patch("/{id}", response_model=EmergencyRequestResponse)
-async def update_emergency_request(id: str, payload: EmergencyRequestUpdate):
+async def update_emergency_request(id: str, payload: EmergencyRequestUpdate, admin: dict = Depends(get_current_admin)):
     db = get_database()
     obj_id = parse_object_id(id)
     
@@ -185,7 +186,7 @@ async def update_emergency_request(id: str, payload: EmergencyRequestUpdate):
     return formatted_doc
 
 @router.delete("/{id}")
-async def delete_emergency_request(id: str):
+async def delete_emergency_request(id: str, admin: dict = Depends(get_current_admin)):
     db = get_database()
     obj_id = parse_object_id(id)
     result = await db[COLLECTION_NAME].delete_one({"_id": obj_id})

@@ -14,6 +14,7 @@ class VolunteerCreate(BaseModel):
     location: GeoJSONPoint
     skills: List[str] = Field(default_factory=list)
     status: ResourceStatusEnum = ResourceStatusEnum.AVAILABLE
+    access_code: Optional[str] = None
 
 class VolunteerUpdate(BaseModel):
     name: Optional[str] = None
@@ -21,9 +22,11 @@ class VolunteerUpdate(BaseModel):
     location: Optional[GeoJSONPoint] = None
     skills: Optional[List[str]] = None
     status: Optional[ResourceStatusEnum] = None
+    access_code: Optional[str] = None
 
 class VolunteerResponse(VolunteerCreate):
     id: str = Field(..., description="MongoDB string ID")
+    access_code: str = Field(..., description="6-character access code")
 
     model_config = ConfigDict(
         from_attributes=True,

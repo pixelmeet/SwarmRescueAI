@@ -13,15 +13,18 @@ class AmbulanceCreate(BaseModel):
     location: GeoJSONPoint
     status: ResourceStatusEnum = ResourceStatusEnum.AVAILABLE
     plate_number: str
+    access_code: Optional[str] = None
 
 class AmbulanceUpdate(BaseModel):
     driver_name: Optional[str] = None
     location: Optional[GeoJSONPoint] = None
     status: Optional[ResourceStatusEnum] = None
     plate_number: Optional[str] = None
+    access_code: Optional[str] = None
 
 class AmbulanceResponse(AmbulanceCreate):
     id: str = Field(..., description="MongoDB string ID")
+    access_code: str = Field(..., description="6-character access code")
 
     model_config = ConfigDict(
         from_attributes=True,

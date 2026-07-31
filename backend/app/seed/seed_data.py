@@ -5,6 +5,7 @@ Run via: python -m app.seed.seed_data
 import asyncio
 from datetime import datetime
 from app.db.mongo import get_database, connect_to_mongo, close_mongo_connection
+from app.core.deps import generate_access_code
 
 DUMMY_RESCUE_TEAMS = [
     {
@@ -228,23 +229,56 @@ async def seed():
     await db.volunteers.delete_many({})
     await db.emergency_requests.delete_many({})
 
+    # Ensure access_codes are present
+    for item in DUMMY_RESCUE_TEAMS:
+        if not item.get("access_code"):
+            item["access_code"] = generate_access_code()
+
+    for item in DUMMY_AMBULANCES:
+        if not item.get("access_code"):
+            item["access_code"] = generate_access_code()
+
+    for item in DUMMY_VOLUNTEERS:
+        if not item.get("access_code"):
+            item["access_code"] = generate_access_code()
+
     print("Inserting 5 Rescue Teams...")
-    await db.rescue_teams.insert_many(DUMMY_RESCUE_TEAMS)
+    team_res = await db.rescue_teams.insert_many(DUMMY_RESCUE_TEAMS)
 
     print("Inserting 5 Ambulances...")
-    await db.ambulances.insert_many(DUMMY_AMBULANCES)
+    amb_res = await db.ambulances.insert_many(DUMMY_AMBULANCES)
 
     print("Inserting 3 Hospitals...")
     await db.hospitals.insert_many(DUMMY_HOSPITALS)
 
     print("Inserting 8 Volunteers...")
-    await db.volunteers.insert_many(DUMMY_VOLUNTEERS)
+    vol_res = await db.volunteers.insert_many(DUMMY_VOLUNTEERS)
 
     print("Inserting 5 Emergency Requests...")
     await db.emergency_requests.insert_many(DUMMY_EMERGENCY_REQUESTS)
 
+    print("\n============================================================")
+    print("SEEDED FIELD RESOURCE ACCESS CODES (CREDENTIALS):")
+    print("============================================================")
+    print("\n--- Rescue Teams ---")
+    cursor = db.rescue_teams.find()
+    async for team in cursor:
+        print(f"  * {team.get('name')} | ID: {team.get('_id')} | Access Code: {team.get('access_code')}")
+
+    print("\n--- Ambulances ---")
+    cursor = db.ambulances.find()
+    async for amb in cursor:
+        print(f"  * {amb.get('driver_name')} ({amb.get('plate_number')}) | ID: {amb.get('_id')} | Access Code: {amb.get('access_code')}")
+
+    print("\n--- Volunteers ---")
+    cursor = db.volunteers.find()
+    async for vol in cursor:
+        print(f"  * {vol.get('name')} ({vol.get('email')}) | ID: {vol.get('_id')} | Access Code: {vol.get('access_code')}")
+
+    print("============================================================\n")
     print("Seed data populated successfully across Mumbai, India coordinates!")
     await close_mongo_connection()
 
 if __name__ == "__main__":
     asyncio.run(seed())
+

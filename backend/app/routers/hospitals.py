@@ -1,10 +1,11 @@
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, status, Query
+from fastapi import APIRouter, HTTPException, status, Query, Depends
 from pymongo import ReturnDocument
 from bson import ObjectId
 from bson.errors import InvalidId
 
 from app.db.mongo import get_database
+from app.core.deps import get_current_admin
 from app.schemas.hospital import (
     HospitalCreate,
     HospitalUpdate,
@@ -31,7 +32,7 @@ def format_hospital(doc: dict) -> dict:
     return doc
 
 @router.post("/", response_model=HospitalResponse, status_code=status.HTTP_201_CREATED)
-async def create_hospital(hospital: HospitalCreate):
+async def create_hospital(hospital: HospitalCreate, admin: dict = Depends(get_current_admin)):
     db = get_database()
     hosp_dict = hospital.model_dump()
     result = await db[COLLECTION_NAME].insert_one(hosp_dict)
@@ -63,7 +64,7 @@ async def get_hospital(id: str):
     return format_hospital(doc)
 
 @router.patch("/{id}", response_model=HospitalResponse)
-async def update_hospital(id: str, payload: HospitalUpdate):
+async def update_hospital(id: str, payload: HospitalUpdate, admin: dict = Depends(get_current_admin)):
     db = get_database()
     obj_id = parse_object_id(id)
     
@@ -94,7 +95,7 @@ async def update_hospital(id: str, payload: HospitalUpdate):
     return formatted_doc
 
 @router.delete("/{id}")
-async def delete_hospital(id: str):
+async def delete_hospital(id: str, admin: dict = Depends(get_current_admin)):
     db = get_database()
     obj_id = parse_object_id(id)
     result = await db[COLLECTION_NAME].delete_one({"_id": obj_id})

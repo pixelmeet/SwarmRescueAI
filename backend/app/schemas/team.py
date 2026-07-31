@@ -20,6 +20,7 @@ class RescueTeamCreate(BaseModel):
     location: GeoJSONPoint
     status: ResourceStatusEnum = ResourceStatusEnum.AVAILABLE
     skills: List[str] = Field(default_factory=list)
+    access_code: Optional[str] = None
 
 class RescueTeamUpdate(BaseModel):
     name: Optional[str] = None
@@ -27,9 +28,11 @@ class RescueTeamUpdate(BaseModel):
     location: Optional[GeoJSONPoint] = None
     status: Optional[ResourceStatusEnum] = None
     skills: Optional[List[str]] = None
+    access_code: Optional[str] = None
 
 class RescueTeamResponse(RescueTeamCreate):
     id: str = Field(..., description="MongoDB string ID")
+    access_code: str = Field(..., description="6-character access code")
 
     model_config = ConfigDict(
         from_attributes=True,

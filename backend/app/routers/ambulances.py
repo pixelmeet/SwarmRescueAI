@@ -1,10 +1,11 @@
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, status, Query
+from fastapi import APIRouter, HTTPException, status, Query, Depends
 from pymongo import ReturnDocument
 from bson import ObjectId
 from bson.errors import InvalidId
 
 from app.db.mongo import get_database
+from app.core.deps import get_current_admin, generate_access_code
 from app.schemas.ambulance import (
     AmbulanceCreate,
     AmbulanceUpdate,
@@ -32,9 +33,11 @@ def format_ambulance(doc: dict) -> dict:
     return doc
 
 @router.post("/", response_model=AmbulanceResponse, status_code=status.HTTP_201_CREATED)
-async def create_ambulance(ambulance: AmbulanceCreate):
+async def create_ambulance(ambulance: AmbulanceCreate, admin: dict = Depends(get_current_admin)):
     db = get_database()
     amb_dict = ambulance.model_dump()
+    if not amb_dict.get("access_code"):
+        amb_dict["access_code"] = generate_access_code()
     result = await db[COLLECTION_NAME].insert_one(amb_dict)
     created_doc = await db[COLLECTION_NAME].find_one({"_id": result.inserted_id})
     return format_ambulance(created_doc)
@@ -64,7 +67,7 @@ async def get_ambulance(id: str):
     return format_ambulance(doc)
 
 @router.patch("/{id}", response_model=AmbulanceResponse)
-async def update_ambulance(id: str, payload: AmbulanceUpdate):
+async def update_ambulance(id: str, payload: AmbulanceUpdate, admin: dict = Depends(get_current_admin)):
     db = get_database()
     obj_id = parse_object_id(id)
     
@@ -99,7 +102,7 @@ async def update_ambulance(id: str, payload: AmbulanceUpdate):
     return formatted_doc
 
 @router.delete("/{id}")
-async def delete_ambulance(id: str):
+async def delete_ambulance(id: str, admin: dict = Depends(get_current_admin)):
     db = get_database()
     obj_id = parse_object_id(id)
     result = await db[COLLECTION_NAME].delete_one({"_id": obj_id})

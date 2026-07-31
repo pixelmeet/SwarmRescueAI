@@ -84,6 +84,7 @@ export interface RescueTeam {
   location: GeoJSONPoint;
   status: ResourceStatus;
   skills: string[];
+  access_code?: string;
 }
 
 export interface Ambulance {
@@ -92,6 +93,7 @@ export interface Ambulance {
   location: GeoJSONPoint;
   status: ResourceStatus;
   plate_number: string;
+  access_code?: string;
 }
 
 export interface Hospital {
@@ -110,6 +112,7 @@ export interface Volunteer {
   location: GeoJSONPoint;
   skills: string[];
   status: ResourceStatus;
+  access_code?: string;
 }
 
 export interface AnalyticsData {
@@ -242,10 +245,19 @@ export async function createAssignment(data: AssignmentCreate): Promise<Assignme
   });
 }
 
-export async function updateAssignmentStatus(id: string, status: AssignmentStatus): Promise<AssignmentResponse> {
+export async function updateAssignmentStatus(
+  id: string,
+  status: AssignmentStatus,
+  resourceId?: string,
+  accessCode?: string
+): Promise<AssignmentResponse> {
   return fetchApi<AssignmentResponse>(`/api/assignments/${id}/status`, {
     method: "PATCH",
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({
+      status,
+      resource_id: resourceId,
+      access_code: accessCode,
+    }),
   });
 }
 

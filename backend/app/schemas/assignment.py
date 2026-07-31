@@ -33,4 +33,6 @@ class AssignmentResponse(AssignmentCreate):
 
 class AssignmentStatusUpdate(BaseModel):
     status: AssignmentStatusEnum
+    resource_id: Optional[str] = None
+    access_code: Optional[str] = None
 
