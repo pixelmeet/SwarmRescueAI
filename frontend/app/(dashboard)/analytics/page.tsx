@@ -5,6 +5,7 @@ import { BarChart3, RefreshCw, Clock, CheckCircle2, Activity, PieChart as PieIco
 import { getAnalytics, AnalyticsData } from "@/lib/api";
 import { StatCardSkeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
   BarChart,
@@ -88,14 +89,14 @@ export default function AnalyticsDashboardPage() {
 
   return (
     <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-6 bg-background min-h-screen text-slate-100 font-sans">
-      {/* Header */}
-      <header className="pb-4 border-b border-[var(--border-primary)] flex justify-between items-center flex-wrap gap-4">
+      {/* Analytics Sub-Header */}
+      <div className="pb-3 border-b border-[var(--border-primary)] flex justify-between items-center flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-violet-400 tracking-tight flex items-center gap-2.5">
-            <BarChart3 className="w-8 h-8 text-violet-500 shrink-0" />
-            SwarmRescue AI Operational Analytics
+          <h1 className="text-xl md:text-2xl font-extrabold text-violet-400 tracking-tight flex items-center gap-2.5">
+            <BarChart3 className="w-7 h-7 text-violet-500 shrink-0" />
+            Operational Analytics & Telemetry
           </h1>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-slate-400 mt-0.5">
             Real-time emergency triage metrics, dispatch duration averages, and swarm unit utilization rates.
           </p>
         </div>
@@ -108,12 +109,16 @@ export default function AnalyticsDashboardPage() {
         >
           Refresh Metrics
         </Button>
-      </header>
+      </div>
 
       {error && (
-        <div className="p-4 bg-red-950/80 border border-red-800 rounded-card text-xs text-red-300 font-medium">
-          {error}
-        </div>
+        <EmptyState
+          icon="error"
+          title="Failed to Load Analytics"
+          description={error}
+          actionLabel="Retry Loading"
+          onAction={loadAnalyticsData}
+        />
       )}
 
       {/* Top Metric Stat Cards */}
@@ -127,7 +132,7 @@ export default function AnalyticsDashboardPage() {
           </>
         ) : (
           <>
-            <div className="p-5 bg-surface-primary border border-[var(--border-primary)] rounded-card shadow-xl space-y-1">
+            <Card padding="sm" className="space-y-1">
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                 Total Emergency Requests
               </p>
@@ -138,9 +143,9 @@ export default function AnalyticsDashboardPage() {
                 <CheckCircle2 className="w-3 h-3" />
                 {resolvedRequests} marked resolved
               </p>
-            </div>
+            </Card>
 
-            <div className="p-5 bg-surface-primary border border-[var(--border-primary)] rounded-card shadow-xl space-y-1">
+            <Card padding="sm" className="space-y-1">
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                 Avg Triage &rarr; Assignment
               </p>
@@ -158,9 +163,9 @@ export default function AnalyticsDashboardPage() {
                 <Clock className="w-3 h-3 text-primary" />
                 Submission to resource dispatch
               </p>
-            </div>
+            </Card>
 
-            <div className="p-5 bg-surface-primary border border-[var(--border-primary)] rounded-card shadow-xl space-y-1">
+            <Card padding="sm" className="space-y-1">
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                 Avg Assignment &rarr; Resolution
               </p>
@@ -178,9 +183,9 @@ export default function AnalyticsDashboardPage() {
                 <CheckCircle2 className="w-3 h-3 text-emerald-400" />
                 Field arrival to incident resolution
               </p>
-            </div>
+            </Card>
 
-            <div className="p-5 bg-surface-primary border border-[var(--border-primary)] rounded-card shadow-xl space-y-1">
+            <Card padding="sm" className="space-y-1">
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                 Resource Utilization Rate
               </p>
@@ -191,15 +196,15 @@ export default function AnalyticsDashboardPage() {
                 <Activity className="w-3 h-3 text-violet-400" />
                 {data?.active_resources_count || 0} active units dispatched
               </p>
-            </div>
+            </Card>
           </>
         )}
       </div>
 
       {/* Visualizations Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Donut Chart: Resolution Rate (Client-Side Computed) */}
-        <div className="p-6 rounded-card border border-[var(--border-primary)] bg-surface-primary shadow-xl space-y-4 flex flex-col justify-between">
+        {/* Donut Chart: Resolution Rate */}
+        <Card className="space-y-4 flex flex-col justify-between">
           <div>
             <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
               <PieIcon className="w-4 h-4 text-emerald-400" />
@@ -270,10 +275,10 @@ export default function AnalyticsDashboardPage() {
               </div>
             </div>
           )}
-        </div>
+        </Card>
 
         {/* Category Breakdown Bar Chart */}
-        <div className="p-6 rounded-card border border-[var(--border-primary)] bg-surface-primary shadow-xl space-y-4 flex flex-col justify-between">
+        <Card className="space-y-4 flex flex-col justify-between">
           <div>
             <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-violet-500"></span>
@@ -335,10 +340,10 @@ export default function AnalyticsDashboardPage() {
               </ResponsiveContainer>
             </div>
           )}
-        </div>
+        </Card>
 
         {/* Severity Breakdown Bar Chart */}
-        <div className="p-6 rounded-card border border-[var(--border-primary)] bg-surface-primary shadow-xl space-y-4 flex flex-col justify-between">
+        <Card className="space-y-4 flex flex-col justify-between">
           <div>
             <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span>
@@ -400,7 +405,7 @@ export default function AnalyticsDashboardPage() {
               </ResponsiveContainer>
             </div>
           )}
-        </div>
+        </Card>
       </div>
     </div>
   );

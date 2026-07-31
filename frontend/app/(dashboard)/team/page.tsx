@@ -9,7 +9,6 @@ import {
   RefreshCw,
   Clock,
   MapPin,
-  LogOut,
   Lock,
   KeyRound,
   ShieldCheck,
@@ -38,7 +37,8 @@ import { socketClient } from "@/lib/socket";
 import { CardSkeleton } from "@/components/ui/Skeleton";
 import { SeverityBadge, CategoryBadge, RequestStatusBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { ToastContainer, ToastMessage } from "@/components/ui/Toast";
+import { Card } from "@/components/ui/Card";
+import { useToast } from "@/components/ui/ToastContext";
 import { EmptyState } from "@/components/ui/EmptyState";
 
 interface UnifiedResource {
@@ -52,6 +52,7 @@ interface UnifiedResource {
 function TeamDashboardContent() {
   const searchParams = useSearchParams();
   const initialResourceIdFromUrl = searchParams.get("resource_id") || "";
+  const { addToast } = useToast();
 
   const [resources, setResources] = useState<UnifiedResource[]>([]);
   
@@ -70,19 +71,8 @@ function TeamDashboardContent() {
   const [assignments, setAssignments] = useState<AssignmentResponse[]>([]);
   const [requests, setRequests] = useState<EmergencyRequestResponse[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
-
-  // Toast notifications
-  const [toasts, setToasts] = useState<ToastMessage[]>([]);
-
-  const addToast = (type: "success" | "error" | "info", title: string, message?: string) => {
-    const id = Math.random().toString(36).substring(2, 9);
-    setToasts((prev) => [...prev, { id, type, title, message }]);
-  };
-
-  const removeToast = (id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
 
   // Check stored credentials on mount
   useEffect(() => {
@@ -97,7 +87,7 @@ function TeamDashboardContent() {
     }
   }, [initialResourceIdFromUrl]);
 
-  // Load roster resources for selector dropdown (used for login and resource resolution)
+  // Load roster resources for selector dropdown
   useEffect(() => {
     async function loadResources() {
       try {
@@ -133,7 +123,6 @@ function TeamDashboardContent() {
 
         setResources(unified);
 
-        // Pre-select first resource if none selected yet for login
         if (!loginResourceId && unified.length > 0) {
           setLoginResourceId(unified[0].id);
         }
@@ -149,15 +138,17 @@ function TeamDashboardContent() {
     if (!authenticatedResourceId) return;
 
     setLoading(true);
+    setFetchError(null);
     try {
       const [assignList, reqList] = await Promise.all([
-        listAssignments(authenticatedResourceId).catch(() => []),
-        listRequests().catch(() => []),
+        listAssignments(authenticatedResourceId),
+        listRequests(),
       ]);
       setAssignments(assignList);
       setRequests(reqList);
     } catch (err) {
       console.error("Error loading team assignments:", err);
+      setFetchError(err instanceof Error ? err.message : "Failed to load assignments.");
     } finally {
       setLoading(false);
     }
@@ -194,24 +185,10 @@ function TeamDashboardContent() {
       return;
     }
 
-    // Save locally
     setFieldCredentials(loginResourceId, loginAccessCode.trim());
     setAuthenticatedResourceId(loginResourceId);
     setAuthenticatedAccessCode(loginAccessCode.trim());
     setIsAuthenticated(true);
-  };
-
-  // Handle Logout
-  const handleLogout = () => {
-    removeFieldCredentials();
-    setAuthenticatedResourceId("");
-    setAuthenticatedAccessCode("");
-    setIsAuthenticated(false);
-    setAssignments([]);
-    setRequests([]);
-    setLoginAccessCode("");
-    setLoginError(null);
-    addToast("info", "Logged Out", "You have been logged out of the field responder portal.");
   };
 
   // Handle assignment status transition (en_route -> completed)
@@ -237,7 +214,6 @@ function TeamDashboardContent() {
 
       addToast("success", "Status Updated", statusText);
 
-      // Optimistic update
       setAssignments((prev) =>
         prev.map((a) => (a.id === assignmentId ? { ...a, status: newStatus } : a))
       );
@@ -247,7 +223,6 @@ function TeamDashboardContent() {
       console.error("Failed to update status:", err);
       const errDetail = err?.message || String(err);
       
-      // If 401 / Unauthorized or access code invalid
       if (errDetail.includes("401") || errDetail.toLowerCase().includes("unauthorized") || errDetail.toLowerCase().includes("access code")) {
         addToast("error", "Authentication Error", "Invalid access code. Please log in again.");
         removeFieldCredentials();
@@ -275,10 +250,8 @@ function TeamDashboardContent() {
     );
 
     return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 text-slate-100 font-sans">
-        <ToastContainer toasts={toasts} onDismiss={removeToast} />
-        
-        <div className="w-full max-w-md bg-surface-primary border border-[var(--border-primary)] rounded-card p-6 md:p-8 shadow-2xl space-y-6">
+      <div className="min-h-[80vh] bg-background flex flex-col items-center justify-center p-4 text-slate-100 font-sans">
+        <Card className="w-full max-w-md space-y-6">
           <div className="text-center space-y-2">
             <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mx-auto text-emerald-400">
               <ShieldCheck className="w-7 h-7" />
@@ -358,7 +331,7 @@ function TeamDashboardContent() {
               Authenticate & Access Portal
             </Button>
           </form>
-        </div>
+        </Card>
       </div>
     );
   }
@@ -367,46 +340,31 @@ function TeamDashboardContent() {
 
   return (
     <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6 bg-background min-h-screen text-slate-100 font-sans">
-      <ToastContainer toasts={toasts} onDismiss={removeToast} />
-
-      {/* Header */}
-      <header className="flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-[var(--border-primary)] gap-4">
+      {/* Active Unit Badge Header */}
+      <div className="flex items-center justify-between pb-3 border-b border-[var(--border-primary)] flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-emerald-400 tracking-tight flex items-center gap-2.5">
-            <Users className="w-8 h-8 text-emerald-500 shrink-0" />
-            Field Responder Portal
+          <h1 className="text-xl md:text-2xl font-extrabold text-emerald-400 tracking-tight flex items-center gap-2">
+            <Users className="w-6 h-6 text-emerald-500" />
+            Field Responder Operations
           </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Task execution view for teams, ambulances, and volunteers to update dispatch status.
+          <p className="text-xs text-slate-400 mt-0.5">
+            Active task queue & status transition workflow
           </p>
         </div>
 
-        {/* Authenticated Resource Unit Scoped View & Log Out */}
-        <div className="flex items-center gap-3">
-          <div className="bg-surface-primary border border-[var(--border-primary)] px-3 py-2 rounded-card flex items-center gap-2">
-            <Lock className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-            <span className="text-xs font-semibold text-slate-400 whitespace-nowrap">
-              Active Unit:
-            </span>
-            <span className="text-xs font-extrabold text-emerald-400 whitespace-nowrap">
-              {activeResource ? activeResource.name : authenticatedResourceId || "Authenticated"}
-            </span>
-          </div>
-
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleLogout}
-            icon={<LogOut className="w-3.5 h-3.5 text-red-400" />}
-            className="border-slate-800 hover:border-red-800 text-slate-300 hover:text-red-400"
-          >
-            Log out
-          </Button>
+        <div className="bg-surface-primary border border-[var(--border-primary)] px-3.5 py-1.5 rounded-card flex items-center gap-2">
+          <Lock className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+          <span className="text-xs font-semibold text-slate-400 whitespace-nowrap">
+            Active Unit:
+          </span>
+          <span className="text-xs font-extrabold text-emerald-400 whitespace-nowrap">
+            {activeResource ? activeResource.name : authenticatedResourceId || "Authenticated"}
+          </span>
         </div>
-      </header>
+      </div>
 
       {/* Assigned Tasks Grid */}
-      <div className="bg-surface-primary border border-[var(--border-primary)] rounded-card p-5 md:p-6 shadow-xl space-y-5">
+      <Card className="space-y-5">
         <div className="flex justify-between items-center">
           <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -433,6 +391,14 @@ function TeamDashboardContent() {
             <CardSkeleton />
             <CardSkeleton />
           </div>
+        ) : fetchError ? (
+          <EmptyState
+            icon="error"
+            title="Failed to Load Assignments"
+            description={fetchError}
+            actionLabel="Retry Loading"
+            onAction={loadData}
+          />
         ) : assignments.length === 0 ? (
           <EmptyState
             icon="clear"
@@ -568,7 +534,7 @@ function TeamDashboardContent() {
             })}
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

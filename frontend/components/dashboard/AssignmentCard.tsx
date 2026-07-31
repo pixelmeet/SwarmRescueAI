@@ -11,6 +11,8 @@ import {
 } from "@/lib/api";
 import { SeverityBadge, CategoryBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { Loader2, Sparkles, Navigation, Clock } from "lucide-react";
 
@@ -67,23 +69,19 @@ export function AssignmentCard({
   if (onAssign || selectedRequest !== undefined) {
     if (!selectedRequest) {
       return (
-        <div className="bg-surface-primary border border-[var(--border-primary)] rounded-card p-5 shadow-xl space-y-4">
+        <Card className="space-y-4">
           <h3 className="font-bold text-xs text-slate-200 uppercase tracking-wider flex items-center justify-between">
             <span className="flex items-center gap-1.5">
               <Sparkles className="w-4 h-4 text-primary animate-pulse" />
               AI Resource Dispatch Engine
             </span>
           </h3>
-          <div className="p-8 border border-dashed border-slate-800 rounded-card text-center text-slate-400 text-xs space-y-2">
-            <Navigation className="w-10 h-10 text-slate-600 mx-auto" />
-            <p className="font-medium text-slate-300">
-              No incident selected
-            </p>
-            <p className="text-[11px] text-slate-500">
-              Select an emergency incident from the queue to calculate AI scoring recommendations and dispatch resources.
-            </p>
-          </div>
-        </div>
+          <EmptyState
+            icon="empty"
+            title="No incident selected"
+            description="Select an emergency incident from the queue to calculate AI scoring recommendations and dispatch resources."
+          />
+        </Card>
       );
     }
 
@@ -199,7 +197,7 @@ export function AssignmentCard({
     };
 
     return (
-      <div className="bg-surface-primary border border-[var(--border-primary)] rounded-card p-5 shadow-xl space-y-4">
+      <Card className="space-y-4">
         {/* Dispatch Confirmation Modal */}
         <ConfirmModal
           isOpen={!!pendingCandidate}
@@ -262,13 +260,17 @@ export function AssignmentCard({
             <p>Computing optimal weighted score matches with Scoring Engine...</p>
           </div>
         ) : recError ? (
-          <div className="p-3 bg-red-950/60 border border-red-800 rounded-card text-xs text-red-300">
-            {recError}
-          </div>
+          <EmptyState
+            icon="error"
+            title="Recommendation Engine Error"
+            description={recError}
+          />
         ) : totalCandidates === 0 ? (
-          <div className="p-4 bg-slate-950 border border-slate-800 rounded-card text-xs text-slate-400 text-center">
-            No available resources matched for this request location/skills.
-          </div>
+          <EmptyState
+            icon="empty"
+            title="No matching resources"
+            description="No available rescue units matched this request location or required skills."
+          />
         ) : (
           <div className="space-y-4 max-h-[420px] overflow-y-auto pr-1 custom-scrollbar">
             {renderSection(
@@ -301,7 +303,7 @@ export function AssignmentCard({
             )}
           </div>
         )}
-      </div>
+      </Card>
     );
   }
 
@@ -313,7 +315,7 @@ export function AssignmentCard({
   const currentEta = assignment?.eta_minutes ?? etaMinutes;
 
   return (
-    <div className="p-4 bg-surface-primary border border-[var(--border-primary)] rounded-card space-y-3 shadow-lg">
+    <Card className="space-y-3">
       <div className="flex justify-between items-start">
         <div>
           <h4 className="text-sm font-bold text-slate-100">{title}</h4>
@@ -345,6 +347,6 @@ export function AssignmentCard({
           </select>
         )}
       </div>
-    </div>
+    </Card>
   );
 }

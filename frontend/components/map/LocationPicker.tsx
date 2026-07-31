@@ -9,7 +9,7 @@ export interface LocationPickerProps {
   initialLocation?: { lat: number; lng: number };
 }
 
-// Default fallback coordinates (e.g. 28.6139, 77.2090 or 37.7749, -122.4194)
+// Default fallback coordinates
 const DEFAULT_CENTER = { lat: 28.6139, lng: 77.2090 };
 
 // Dynamically import Leaflet elements to prevent SSR window reference errors
@@ -87,7 +87,7 @@ const LeafletMapInner = dynamic(
       );
 
       return (
-        <div className="relative w-full h-[320px] rounded-lg overflow-hidden border border-slate-800 shadow-inner">
+        <div className="relative w-full h-[280px] sm:h-[360px] rounded-lg overflow-hidden border border-slate-800 shadow-inner">
           <MapContainer
             center={[location.lat, location.lng]}
             zoom={14}
@@ -109,13 +109,13 @@ const LeafletMapInner = dynamic(
             />
           </MapContainer>
 
-          {/* Action Overlay */}
+          {/* Action Overlay with >=44px tap targets */}
           <div className="absolute top-3 right-3 z-[400] flex flex-col gap-2">
             <button
               type="button"
               onClick={onTriggerGeolocate}
               disabled={isGeolocating}
-              className="px-3 py-1.5 bg-slate-900/90 hover:bg-slate-800 text-white border border-slate-700 rounded-md text-xs font-semibold backdrop-blur shadow-md flex items-center gap-1.5 transition disabled:opacity-50"
+              className="px-3.5 py-2.5 min-h-[44px] min-w-[44px] bg-slate-900/90 hover:bg-slate-800 text-white border border-slate-700 rounded-md text-xs font-semibold backdrop-blur shadow-md flex items-center justify-center gap-1.5 transition disabled:opacity-50 active:scale-95 cursor-pointer"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -137,7 +137,7 @@ const LeafletMapInner = dynamic(
                   d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
                 />
               </svg>
-              {isGeolocating ? "Detecting..." : "My Location"}
+              <span>{isGeolocating ? "Detecting..." : "My Location"}</span>
             </button>
           </div>
 
@@ -151,7 +151,7 @@ const LeafletMapInner = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="w-full h-[320px] rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 text-sm">
+      <div className="w-full h-[280px] sm:h-[360px] rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 text-sm">
         <div className="flex items-center gap-2">
           <svg className="animate-spin h-5 w-5 text-red-500" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
@@ -204,7 +204,6 @@ export function LocationPicker({ onLocationSelect, initialLocation }: LocationPi
     }
   };
 
-  // Run browser geolocation on initial mount
   useEffect(() => {
     if (!initialLocation) {
       triggerGeolocation();

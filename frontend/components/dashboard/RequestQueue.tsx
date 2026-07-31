@@ -151,9 +151,13 @@ export function RequestQueue({
       {loading && sortedAndFilteredRequests.length === 0 ? (
         <QueueSkeleton count={3} />
       ) : error ? (
-        <div className="p-3 bg-red-950/60 border border-red-800 rounded-card text-xs text-red-300">
-          {error}
-        </div>
+        <EmptyState
+          icon="error"
+          title="Incident Queue Error"
+          description={error}
+          actionLabel="Retry Loading"
+          onAction={loadRequests}
+        />
       ) : sortedAndFilteredRequests.length === 0 ? (
         <EmptyState
           icon="clear"

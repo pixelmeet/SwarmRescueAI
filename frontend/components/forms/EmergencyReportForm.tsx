@@ -7,20 +7,17 @@ import { validateEmergencyReport } from "@/lib/validators";
 import {
   SeverityBadge,
   CategoryBadge,
-  RequestStatusBadge,
 } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
+import { Card } from "@/components/ui/Card";
 import {
   AlertTriangle,
   CheckCircle2,
   Sparkles,
   MapPin,
   FileText,
-  Mail,
-  User,
   Send,
-  Loader2,
   RefreshCw,
 } from "lucide-react";
 
@@ -133,44 +130,47 @@ export function EmergencyReportForm() {
     setPreviewData(null);
   };
 
-  // Success Screen View
+  // Calm & Reassuring Success Screen View
   if (successResponse) {
     return (
-      <div className="bg-surface-primary border-2 border-emerald-500 rounded-card p-6 md:p-8 shadow-2xl text-slate-100 space-y-6 animate-fade-in">
-        <div className="flex items-center gap-3 border-b border-[var(--border-primary)] pb-4">
-          <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 flex items-center justify-center shrink-0">
+      <Card variant="elevated" className="space-y-6 animate-fade-in border-emerald-800/80">
+        <div className="flex items-center gap-3.5 border-b border-slate-800 pb-4">
+          <div className="w-12 h-12 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-700/80 flex items-center justify-center shrink-0">
             <CheckCircle2 className="w-7 h-7" />
           </div>
           <div>
             <h2 className="text-xl md:text-2xl font-extrabold text-white tracking-tight">
-              Emergency Report Transmitted
+              Emergency Report Received
             </h2>
-            <p className="text-xs text-emerald-400 font-medium">
-              First responders notified via SwarmRescue AI real-time socket
+            <p className="text-xs text-emerald-400 font-medium mt-0.5">
+              Nearest rescue units and dispatch operators have been alerted.
             </p>
           </div>
         </div>
 
-        {/* Request Identifier */}
-        <div className="bg-slate-950 p-4 rounded-card border border-[var(--border-primary)] space-y-1">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">
-            Report Confirmation ID
+        {/* Confirmation Banner */}
+        <div className="bg-slate-950 p-4 rounded-card border border-slate-800 space-y-1.5">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">
+            Report Reference ID
           </span>
-          <div className="text-lg font-mono font-extrabold text-emerald-400 select-all tracking-wide break-all">
+          <div className="text-base sm:text-lg font-mono font-bold text-emerald-400 select-all tracking-wide break-all">
             {successResponse.id}
           </div>
+          <p className="text-[11px] text-slate-400">
+            Keep this reference ID for updates sent to <strong className="text-slate-300">{successResponse.reporter_email}</strong>.
+          </p>
         </div>
 
         {/* AI Auto-Classified Details */}
         <div className="space-y-3 bg-slate-950/60 p-4 rounded-card border border-slate-800">
           <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-primary animate-pulse" />
-            Groq Llama-3.3 AI Triage Classification
+            <Sparkles className="w-4 h-4 text-primary" />
+            AI Triage Classification
           </h3>
 
           <div className="grid grid-cols-2 gap-3 pt-1">
             <div>
-              <span className="text-[11px] text-slate-400 block mb-1">Severity Level</span>
+              <span className="text-[11px] text-slate-400 block mb-1">Assessed Severity</span>
               <SeverityBadge severity={successResponse.severity} pulse={true} size="sm" />
             </div>
             <div>
@@ -178,26 +178,15 @@ export function EmergencyReportForm() {
               <CategoryBadge category={successResponse.category} size="sm" />
             </div>
           </div>
-
-          {successResponse.reasoning && (
-            <div className="pt-2.5 border-t border-slate-900">
-              <span className="text-[11px] text-slate-400 block mb-1 font-medium">
-                AI Diagnostic Reasoning
-              </span>
-              <p className="text-xs text-slate-300 italic bg-slate-900 p-3 rounded-card border border-slate-800 leading-relaxed">
-                "{successResponse.reasoning}"
-              </p>
-            </div>
-          )}
         </div>
 
         {/* Summary info */}
-        <div className="text-xs text-slate-400 space-y-1 font-mono bg-slate-950/40 p-3 rounded-card border border-slate-900">
+        <div className="text-xs text-slate-400 space-y-1.5 font-mono bg-slate-950/40 p-3.5 rounded-card border border-slate-900">
           <p>
-            <strong className="text-slate-300">Reporter:</strong> {successResponse.reporter_name} ({successResponse.reporter_email})
+            <strong className="text-slate-300">Reporter:</strong> {successResponse.reporter_name}
           </p>
           <p>
-            <strong className="text-slate-300">Coordinates:</strong> [{successResponse.location.coordinates[1].toFixed(5)}, {successResponse.location.coordinates[0].toFixed(5)}]
+            <strong className="text-slate-300">Location:</strong> [{successResponse.location.coordinates[1].toFixed(4)}, {successResponse.location.coordinates[0].toFixed(4)}]
           </p>
         </div>
 
@@ -205,12 +194,12 @@ export function EmergencyReportForm() {
           variant="secondary"
           size="lg"
           onClick={handleReset}
-          className="w-full"
+          className="w-full min-h-[48px]"
           icon={<RefreshCw className="w-4 h-4" />}
         >
-          Submit Another Emergency Report
+          Submit Another Report
         </Button>
-      </div>
+      </Card>
     );
   }
 
@@ -218,7 +207,7 @@ export function EmergencyReportForm() {
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* API Error Alert */}
       {apiError && (
-        <div className="p-4 bg-red-950/80 border-2 border-red-600 rounded-card text-red-200 text-sm flex items-start gap-3 shadow-lg">
+        <div className="p-4 bg-red-950/80 border border-red-700 rounded-card text-red-200 text-sm flex items-start gap-3 shadow-lg">
           <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
           <div className="flex-1">
             <h4 className="font-bold text-red-100">Submission Error</h4>
@@ -249,7 +238,7 @@ export function EmergencyReportForm() {
         </div>
       </div>
 
-      {/* Description Field with Live AI Preview */}
+      {/* Description Field */}
       <div>
         <div className="flex justify-between items-center mb-1.5">
           <label
@@ -260,7 +249,7 @@ export function EmergencyReportForm() {
             Emergency Description <span className="text-red-500">*</span>
           </label>
           <span className="text-[11px] font-mono text-slate-500">
-            {description.length} / 500 chars
+            {description.length} / 500
           </span>
         </div>
 
@@ -285,7 +274,7 @@ export function EmergencyReportForm() {
           {previewLoading ? (
             <span className="text-[11px] text-slate-400 flex items-center gap-1.5 font-mono animate-pulse">
               <Sparkles className="w-3.5 h-3.5 text-primary animate-spin" />
-              Running Groq AI Triage Preview...
+              Running AI Triage Preview...
             </span>
           ) : previewData ? (
             <div className="flex items-center gap-2 text-xs">
@@ -305,7 +294,7 @@ export function EmergencyReportForm() {
             <button
               type="button"
               onClick={handleTestClassify}
-              className="text-[11px] text-primary hover:text-primary-hover font-semibold flex items-center gap-1 cursor-pointer"
+              className="text-[11px] text-primary hover:text-primary-hover font-semibold flex items-center gap-1 cursor-pointer min-h-[44px] px-1"
             >
               <Sparkles className="w-3 h-3" /> Preview AI Triage
             </button>
@@ -356,13 +345,13 @@ export function EmergencyReportForm() {
         />
       </div>
 
-      {/* Submit Button */}
+      {/* Submit Button with >= 48px height for touch ergonomics */}
       <Button
         type="submit"
         variant="danger"
         size="lg"
         loading={isSubmitting}
-        className="w-full uppercase tracking-wider py-4 font-black text-base shadow-xl"
+        className="w-full uppercase tracking-wider py-3.5 min-h-[48px] font-black text-base shadow-xl active:scale-[0.99]"
         icon={<Send className="w-5 h-5" />}
       >
         Transmit Emergency Report

@@ -1,17 +1,16 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { Shield, LogOut, Radio, RefreshCw } from "lucide-react";
+import { Shield, RefreshCw } from "lucide-react";
 import { StatsPanel } from "@/components/dashboard/StatsPanel";
 import { RequestQueue } from "@/components/dashboard/RequestQueue";
 import { AssignmentCard } from "@/components/dashboard/AssignmentCard";
 import { LeafletMap } from "@/components/map/LeafletMap";
-import { ConnectionStatus } from "@/components/ui/ConnectionStatus";
-import { ToastContainer, ToastMessage } from "@/components/ui/Toast";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/Badge";
-import { socketClient, ConnectionStatus as SocketStatus } from "@/lib/socket";
+import { useToast } from "@/components/ui/ToastContext";
 import {
   EmergencyRequestResponse,
   RecommendationCandidate,
@@ -32,6 +31,7 @@ import {
   removeAdminToken,
   loginAdmin,
 } from "@/lib/api";
+import { socketClient } from "@/lib/socket";
 
 const EMPTY_RECOMMENDATIONS: RequestRecommendations = {
   rescue_teams: [],
@@ -41,6 +41,8 @@ const EMPTY_RECOMMENDATIONS: RequestRecommendations = {
 };
 
 export default function AdminDashboardPage() {
+  const { addToast } = useToast();
+
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [checkingAuth, setCheckingAuth] = useState<boolean>(true);
 
@@ -63,22 +65,6 @@ export default function AdminDashboardPage() {
 
   const [dispatchStatus, setDispatchStatus] = useState<string | null>(null);
   const [dispatchingId, setDispatchingId] = useState<string | null>(null);
-
-  // Connection status state
-  const [wsStatus, setWsStatus] = useState<SocketStatus>("disconnected");
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-
-  // Toast notifications
-  const [toasts, setToasts] = useState<ToastMessage[]>([]);
-
-  const addToast = (type: "success" | "error" | "info", title: string, message?: string) => {
-    const id = Math.random().toString(36).substring(2, 9);
-    setToasts((prev) => [...prev, { id, type, title, message }]);
-  };
-
-  const removeToast = (id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
 
   // Resources state
   const [teams, setTeams] = useState<RescueTeam[]>([]);
@@ -117,7 +103,6 @@ export default function AdminDashboardPage() {
         setAmbulances(aRes);
         setHospitals(hRes);
         setVolunteers(vRes);
-        setLastUpdated(new Date().toLocaleTimeString());
 
         if (selectedRequest) {
           const updated = reqRes.find((r) => r.id === selectedRequest.id);
@@ -141,7 +126,6 @@ export default function AdminDashboardPage() {
     refreshDashboardData(true);
 
     socketClient.connect();
-    const unsubStatus = socketClient.onStatusChange(setWsStatus);
 
     const unsubNewReq = socketClient.subscribe(
       "new_request",
@@ -176,14 +160,12 @@ export default function AdminDashboardPage() {
     });
 
     return () => {
-      unsubStatus();
       unsubNewReq();
       unsubStatusUpdate();
       unsubNewAssign();
       unsubResUpdate();
-      socketClient.disconnect();
     };
-  }, [isAuthenticated, refreshDashboardData]);
+  }, [isAuthenticated, refreshDashboardData, addToast]);
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -203,11 +185,6 @@ export default function AdminDashboardPage() {
     } finally {
       setLoggingIn(false);
     }
-  };
-
-  const handleLogout = () => {
-    removeAdminToken();
-    setIsAuthenticated(false);
   };
 
   // Fetch recommendations whenever a request is selected
@@ -280,9 +257,8 @@ export default function AdminDashboardPage() {
   // Unauthenticated Admin Login Screen
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <ToastContainer toasts={toasts} onDismiss={removeToast} />
-        <div className="bg-surface-primary border border-[var(--border-primary)] rounded-card p-8 shadow-2xl max-w-md w-full space-y-6">
+      <div className="min-h-[80vh] bg-background flex items-center justify-center p-4">
+        <Card className="max-w-md w-full space-y-6">
           <div className="text-center space-y-2">
             <div className="w-14 h-14 bg-primary-muted border border-blue-500/30 rounded-2xl flex items-center justify-center mx-auto text-primary">
               <Shield className="w-7 h-7" />
@@ -336,7 +312,7 @@ export default function AdminDashboardPage() {
           <p className="text-[11px] text-slate-500 text-center font-mono">
             Default credentials configured in <code className="text-slate-400">.env</code>
           </p>
-        </div>
+        </Card>
       </div>
     );
   }
@@ -344,29 +320,6 @@ export default function AdminDashboardPage() {
   // Authenticated Admin Dashboard
   return (
     <div className="p-4 md:p-6 space-y-6 bg-background min-h-screen text-slate-100 font-sans">
-      <ToastContainer toasts={toasts} onDismiss={removeToast} />
-
-      {/* Header */}
-      <header className="flex justify-between items-center pb-4 border-b border-[var(--border-primary)] flex-wrap gap-4">
-        <div>
-          <h1 className="text-xl md:text-2xl font-extrabold text-primary tracking-tight flex items-center gap-2.5">
-            <Radio className="w-7 h-7 text-primary animate-pulse shrink-0" />
-            SwarmRescue AI Operational Command Center
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Real-time incident stream &bull; AI Scoring Engine &bull; Tactical CartoDB Map
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <ConnectionStatus status={wsStatus} lastUpdated={lastUpdated} />
-
-          <Button variant="secondary" size="sm" onClick={handleLogout} icon={<LogOut className="w-3.5 h-3.5" />}>
-            Logout
-          </Button>
-        </div>
-      </header>
-
       {/* Top Real-Time Stats */}
       <StatsPanel />
 
@@ -375,7 +328,7 @@ export default function AdminDashboardPage() {
         {/* Left Column */}
         <div className="lg:col-span-4 space-y-6 flex flex-col">
           {/* Incident Queue */}
-          <div className="bg-surface-primary border border-[var(--border-primary)] rounded-card p-5 shadow-xl">
+          <Card>
             <RequestQueue
               requests={requests}
               loading={loadingRequests}
@@ -383,7 +336,7 @@ export default function AdminDashboardPage() {
               onSelectRequest={handleSelectRequest}
               selectedRequestId={selectedRequest?.id}
             />
-          </div>
+          </Card>
 
           {/* Intelligent Resource Dispatch Panel */}
           <AssignmentCard
@@ -414,7 +367,7 @@ export default function AdminDashboardPage() {
           </div>
 
           {/* Resource Inventory Panel */}
-          <div className="bg-surface-primary border border-[var(--border-primary)] rounded-card p-5 shadow-xl space-y-4">
+          <Card className="space-y-4">
             <div className="flex justify-between items-center">
               <h3 className="font-bold text-xs text-slate-200 uppercase tracking-wider flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-blue-500"></span>
@@ -541,7 +494,7 @@ export default function AdminDashboardPage() {
                 </div>
               )}
             </div>
-          </div>
+          </Card>
         </div>
       </div>
     </div>
