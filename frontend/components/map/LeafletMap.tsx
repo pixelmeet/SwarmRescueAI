@@ -42,10 +42,22 @@ const LeafletMapInner = dynamic(
     );
 
     // Custom Icon Generators using Leaflet DivIcons
+
+    // Severity marker fill colors — duplicated from app/globals.css --severity-* variables.
+    // Leaflet DivIcons render outside React's style pipeline, so CSS vars cannot be resolved
+    // at icon-creation time. These hex values MUST be kept in sync with globals.css.
+    const SEVERITY_MARKER_COLORS: Record<string, string> = {
+      critical: "#dc2626",
+      high:     "#f97316",
+      medium:   "#eab308",
+      low:      "#3b82f6",
+    };
+
     const createMarkerIcon = (
       type: "team" | "ambulance" | "hospital" | "volunteer" | "request",
       status: string = "available",
-      isTopCandidate: boolean = false
+      isTopCandidate: boolean = false,
+      severity?: string
     ) => {
       let bg = "#3b82f6";
       let iconSymbol = "📍";
@@ -75,7 +87,8 @@ const LeafletMapInner = dynamic(
           borderRadius = "50%";
           break;
         case "request":
-          bg = "#dc2626"; // Crimson Alert
+          // Severity-aware fill — falls back to critical red if severity is unknown
+          bg = SEVERITY_MARKER_COLORS[severity ?? "critical"] ?? "#dc2626";
           iconSymbol = "🚨";
           borderRadius = "50%";
           break;
@@ -115,7 +128,9 @@ const LeafletMapInner = dynamic(
       });
     };
 
-    const createSelectedRequestIcon = () => {
+    const createSelectedRequestIcon = (severity?: string) => {
+      // Severity-aware fill — falls back to critical red if severity is unknown
+      const color = SEVERITY_MARKER_COLORS[severity ?? "critical"] ?? "#dc2626";
       const html = `
         <div style="position: relative; width: 44px; height: 44px;">
           <div style="
@@ -123,7 +138,7 @@ const LeafletMapInner = dynamic(
             width: 44px;
             height: 44px;
             border-radius: 50%;
-            background: rgba(239, 68, 68, 0.4);
+            background: ${color}66;
             animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
           "></div>
           <div style="
@@ -132,14 +147,14 @@ const LeafletMapInner = dynamic(
             left: 6px;
             width: 32px;
             height: 32px;
-            background: #dc2626;
+            background: ${color};
             border: 3px solid #ffffff;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 16px;
-            box-shadow: 0 0 24px rgba(220, 38, 38, 0.95);
+            box-shadow: 0 0 24px ${color}f2;
           ">
             🚨
           </div>
@@ -399,20 +414,40 @@ const LeafletMapInner = dynamic(
               .filter((r) => !selectedRequest || r.id !== selectedRequest.id)
               .map((req) => {
                 const pos = geoToLatLng(req.location.coordinates);
+                const severityColor = SEVERITY_MARKER_COLORS[req.severity] ?? "#dc2626";
                 return (
                   <Marker
                     key={`req-${req.id}`}
                     position={pos}
-                    icon={createMarkerIcon("request", req.status)}
+                    icon={createMarkerIcon("request", req.status, false, req.severity)}
                     eventHandlers={{
                       click: () => onSelectRequest && onSelectRequest(req),
                     }}
                   >
                     <Popup className="custom-leaflet-popup">
                       <div className="p-1 space-y-1 text-slate-900 font-sans">
-                        <div className="font-bold text-xs uppercase flex justify-between gap-2 text-red-600">
+                        <div className="font-bold text-xs uppercase flex justify-between gap-2" style={{ color: severityColor }}>
                           <span>🚨 {req.category}</span>
-                          <span className="text-[10px] font-bold text-slate-800 uppercase px-1.5 bg-slate-200 rounded">
+                          <span style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                            padding: "1px 6px",
+                            borderRadius: "4px",
+                            background: `${severityColor}22`,
+                            color: severityColor,
+                            fontSize: "10px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                          }}>
+                            <span style={{
+                              width: "6px",
+                              height: "6px",
+                              borderRadius: "50%",
+                              background: severityColor,
+                              display: "inline-block",
+                              flexShrink: 0,
+                            }} />
                             {req.severity}
                           </span>
                         </div>
@@ -420,7 +455,8 @@ const LeafletMapInner = dynamic(
                         <button
                           type="button"
                           onClick={() => onSelectRequest && onSelectRequest(req)}
-                          className="w-full mt-1 py-1 bg-red-600 text-white rounded text-[11px] font-bold hover:bg-red-700 cursor-pointer"
+                          className="w-full mt-1 py-1 text-white rounded text-[11px] font-bold cursor-pointer"
+                          style={{ background: severityColor }}
                         >
                           Select Incident
                         </button>
@@ -431,24 +467,46 @@ const LeafletMapInner = dynamic(
               })}
 
             {/* Selected Request Highlight Marker */}
-            {selectedRequest && selectedReqCoords && (
-              <Marker position={selectedReqCoords} icon={createSelectedRequestIcon()}>
-                <Popup className="custom-leaflet-popup">
-                  <div className="p-1 space-y-1 text-slate-900 font-sans">
-                    <div className="font-extrabold text-xs text-red-600 uppercase flex items-center justify-between">
-                      <span>🚨 SELECTED INCIDENT</span>
-                      <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-[10px] rounded">
-                        {selectedRequest.severity}
-                      </span>
+            {selectedRequest && selectedReqCoords && (() => {
+              const selColor = SEVERITY_MARKER_COLORS[selectedRequest.severity] ?? "#dc2626";
+              return (
+                <Marker position={selectedReqCoords} icon={createSelectedRequestIcon(selectedRequest.severity)}>
+                  <Popup className="custom-leaflet-popup">
+                    <div className="p-1 space-y-1 text-slate-900 font-sans">
+                      <div className="font-extrabold text-xs uppercase flex items-center justify-between" style={{ color: selColor }}>
+                        <span>🚨 SELECTED INCIDENT</span>
+                        <span style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                          padding: "2px 6px",
+                          borderRadius: "4px",
+                          background: `${selColor}22`,
+                          color: selColor,
+                          fontSize: "10px",
+                          fontWeight: 700,
+                          textTransform: "uppercase",
+                        }}>
+                          <span style={{
+                            width: "6px",
+                            height: "6px",
+                            borderRadius: "50%",
+                            background: selColor,
+                            display: "inline-block",
+                            flexShrink: 0,
+                          }} />
+                          {selectedRequest.severity}
+                        </span>
+                      </div>
+                      <div className="font-bold text-xs text-slate-800 font-sans">
+                        {selectedRequest.category}
+                      </div>
+                      <p className="text-xs text-slate-700">{selectedRequest.description}</p>
                     </div>
-                    <div className="font-bold text-xs text-slate-800 font-sans">
-                      {selectedRequest.category}
-                    </div>
-                    <p className="text-xs text-slate-700">{selectedRequest.description}</p>
-                  </div>
-                </Popup>
-              </Marker>
-            )}
+                  </Popup>
+                </Marker>
+              );
+            })()}
           </MapContainer>
 
           {/* Map Legend Overlay */}
