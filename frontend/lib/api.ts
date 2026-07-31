@@ -145,6 +145,30 @@ export function removeAdminToken() {
   }
 }
 
+export function getFieldResourceId(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("field_resource_id");
+}
+
+export function getFieldAccessCode(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("field_access_code");
+}
+
+export function setFieldCredentials(resourceId: string, accessCode: string) {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("field_resource_id", resourceId);
+    localStorage.setItem("field_access_code", accessCode);
+  }
+}
+
+export function removeFieldCredentials() {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("field_resource_id");
+    localStorage.removeItem("field_access_code");
+  }
+}
+
 export async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = endpoint.startsWith("http") ? endpoint : `${API_BASE_URL}${endpoint}`;
   const token = getAdminToken();
@@ -251,12 +275,20 @@ export async function updateAssignmentStatus(
   resourceId?: string,
   accessCode?: string
 ): Promise<AssignmentResponse> {
+  const rId = resourceId || getFieldResourceId() || undefined;
+  const aCode = accessCode || getFieldAccessCode() || undefined;
+
+  const headers: Record<string, string> = {};
+  if (rId) headers["X-Resource-ID"] = rId;
+  if (aCode) headers["X-Access-Code"] = aCode;
+
   return fetchApi<AssignmentResponse>(`/api/assignments/${id}/status`, {
     method: "PATCH",
+    headers,
     body: JSON.stringify({
       status,
-      resource_id: resourceId,
-      access_code: accessCode,
+      resource_id: rId,
+      access_code: aCode,
     }),
   });
 }

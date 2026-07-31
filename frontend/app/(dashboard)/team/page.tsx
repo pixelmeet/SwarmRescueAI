@@ -2,7 +2,20 @@
 
 import React, { Suspense, useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { Users, Truck, CheckCircle2, Navigation, RefreshCw, Clock, MapPin } from "lucide-react";
+import {
+  Users,
+  CheckCircle2,
+  Navigation,
+  RefreshCw,
+  Clock,
+  MapPin,
+  LogOut,
+  Lock,
+  KeyRound,
+  ShieldCheck,
+  Search,
+  AlertCircle,
+} from "lucide-react";
 import {
   listAssignments,
   listRequests,
@@ -10,6 +23,10 @@ import {
   listAmbulances,
   listVolunteers,
   updateAssignmentStatus,
+  getFieldResourceId,
+  getFieldAccessCode,
+  setFieldCredentials,
+  removeFieldCredentials,
   AssignmentResponse,
   EmergencyRequestResponse,
   RescueTeam,
@@ -34,14 +51,25 @@ interface UnifiedResource {
 
 function TeamDashboardContent() {
   const searchParams = useSearchParams();
-  const initialResourceId = searchParams.get("resource_id") || "";
+  const initialResourceIdFromUrl = searchParams.get("resource_id") || "";
 
   const [resources, setResources] = useState<UnifiedResource[]>([]);
-  const [selectedResourceId, setSelectedResourceId] = useState<string>(initialResourceId);
+  
+  // Credentials & Authentication state
+  const [authenticatedResourceId, setAuthenticatedResourceId] = useState<string>("");
+  const [authenticatedAccessCode, setAuthenticatedAccessCode] = useState<string>("");
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
+  // Login screen form state
+  const [loginResourceId, setLoginResourceId] = useState<string>("");
+  const [loginAccessCode, setLoginAccessCode] = useState<string>("");
+  const [loginSearchQuery, setLoginSearchQuery] = useState<string>("");
+  const [loginError, setLoginError] = useState<string | null>(null);
+
+  // Dashboard Data State
   const [assignments, setAssignments] = useState<AssignmentResponse[]>([]);
   const [requests, setRequests] = useState<EmergencyRequestResponse[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   // Toast notifications
@@ -56,7 +84,20 @@ function TeamDashboardContent() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Load available field resources for selector dropdown
+  // Check stored credentials on mount
+  useEffect(() => {
+    const storedResId = getFieldResourceId();
+    const storedCode = getFieldAccessCode();
+    if (storedResId && storedCode) {
+      setAuthenticatedResourceId(storedResId);
+      setAuthenticatedAccessCode(storedCode);
+      setIsAuthenticated(true);
+    } else if (initialResourceIdFromUrl) {
+      setLoginResourceId(initialResourceIdFromUrl);
+    }
+  }, [initialResourceIdFromUrl]);
+
+  // Load roster resources for selector dropdown (used for login and resource resolution)
   useEffect(() => {
     async function loadResources() {
       try {
@@ -92,8 +133,9 @@ function TeamDashboardContent() {
 
         setResources(unified);
 
-        if (!selectedResourceId && unified.length > 0) {
-          setSelectedResourceId(unified[0].id);
+        // Pre-select first resource if none selected yet for login
+        if (!loginResourceId && unified.length > 0) {
+          setLoginResourceId(unified[0].id);
         }
       } catch (err) {
         console.error("Error loading roster resources:", err);
@@ -102,12 +144,14 @@ function TeamDashboardContent() {
     loadResources();
   }, []);
 
-  // Load assignments for selected resource & all emergency requests
+  // Load assignments for authenticated resource & all emergency requests
   const loadData = useCallback(async () => {
+    if (!authenticatedResourceId) return;
+
     setLoading(true);
     try {
       const [assignList, reqList] = await Promise.all([
-        listAssignments(selectedResourceId || undefined).catch(() => []),
+        listAssignments(authenticatedResourceId).catch(() => []),
         listRequests().catch(() => []),
       ]);
       setAssignments(assignList);
@@ -117,22 +161,58 @@ function TeamDashboardContent() {
     } finally {
       setLoading(false);
     }
-  }, [selectedResourceId]);
+  }, [authenticatedResourceId]);
 
   useEffect(() => {
-    loadData();
+    if (isAuthenticated && authenticatedResourceId) {
+      loadData();
 
-    socketClient.connect();
-    const unsubAssign = socketClient.subscribe("new_assignment", () => loadData());
-    const unsubStatus = socketClient.subscribe("status_update", () => loadData());
-    const unsubRes = socketClient.subscribe("resource_update", () => loadData());
+      socketClient.connect();
+      const unsubAssign = socketClient.subscribe("new_assignment", () => loadData());
+      const unsubStatus = socketClient.subscribe("status_update", () => loadData());
+      const unsubRes = socketClient.subscribe("resource_update", () => loadData());
 
-    return () => {
-      unsubAssign();
-      unsubStatus();
-      unsubRes();
-    };
-  }, [loadData]);
+      return () => {
+        unsubAssign();
+        unsubStatus();
+        unsubRes();
+      };
+    }
+  }, [isAuthenticated, authenticatedResourceId, loadData]);
+
+  // Handle Login submission
+  const handleLoginSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError(null);
+
+    if (!loginResourceId) {
+      setLoginError("Please select a resource unit.");
+      return;
+    }
+    if (!loginAccessCode.trim()) {
+      setLoginError("Please enter your resource access code.");
+      return;
+    }
+
+    // Save locally
+    setFieldCredentials(loginResourceId, loginAccessCode.trim());
+    setAuthenticatedResourceId(loginResourceId);
+    setAuthenticatedAccessCode(loginAccessCode.trim());
+    setIsAuthenticated(true);
+  };
+
+  // Handle Logout
+  const handleLogout = () => {
+    removeFieldCredentials();
+    setAuthenticatedResourceId("");
+    setAuthenticatedAccessCode("");
+    setIsAuthenticated(false);
+    setAssignments([]);
+    setRequests([]);
+    setLoginAccessCode("");
+    setLoginError(null);
+    addToast("info", "Logged Out", "You have been logged out of the field responder portal.");
+  };
 
   // Handle assignment status transition (en_route -> completed)
   const handleStatusUpdate = async (
@@ -143,8 +223,12 @@ function TeamDashboardContent() {
     setUpdatingId(assignmentId);
 
     try {
-      const res = resources.find((r) => r.id === targetResourceId);
-      await updateAssignmentStatus(assignmentId, newStatus, targetResourceId, res?.accessCode);
+      await updateAssignmentStatus(
+        assignmentId,
+        newStatus,
+        targetResourceId,
+        authenticatedAccessCode
+      );
 
       const statusText =
         newStatus === "en_route"
@@ -159,19 +243,127 @@ function TeamDashboardContent() {
       );
 
       await loadData();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to update status:", err);
-      addToast(
-        "error",
-        "Update Failed",
-        err instanceof Error ? err.message : "Unknown error"
-      );
+      const errDetail = err?.message || String(err);
+      
+      // If 401 / Unauthorized or access code invalid
+      if (errDetail.includes("401") || errDetail.toLowerCase().includes("unauthorized") || errDetail.toLowerCase().includes("access code")) {
+        addToast("error", "Authentication Error", "Invalid access code. Please log in again.");
+        removeFieldCredentials();
+        setIsAuthenticated(false);
+        setAuthenticatedResourceId("");
+        setAuthenticatedAccessCode("");
+        setAssignments([]);
+        setRequests([]);
+        setLoginError("Invalid access code for the selected resource. Please re-authenticate.");
+      } else {
+        addToast("error", "Update Failed", errDetail);
+      }
     } finally {
       setUpdatingId(null);
     }
   };
 
-  const activeResource = resources.find((r) => r.id === selectedResourceId);
+  // Render Login View if not authenticated
+  if (!isAuthenticated) {
+    const filteredResources = resources.filter(
+      (r) =>
+        r.name.toLowerCase().includes(loginSearchQuery.toLowerCase()) ||
+        r.type.toLowerCase().includes(loginSearchQuery.toLowerCase()) ||
+        r.kind.toLowerCase().includes(loginSearchQuery.toLowerCase())
+    );
+
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 text-slate-100 font-sans">
+        <ToastContainer toasts={toasts} onDismiss={removeToast} />
+        
+        <div className="w-full max-w-md bg-surface-primary border border-[var(--border-primary)] rounded-card p-6 md:p-8 shadow-2xl space-y-6">
+          <div className="text-center space-y-2">
+            <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mx-auto text-emerald-400">
+              <ShieldCheck className="w-7 h-7" />
+            </div>
+            <h1 className="text-xl md:text-2xl font-extrabold text-emerald-400 tracking-tight">
+              Field Responder Login
+            </h1>
+            <p className="text-xs text-slate-400">
+              Select your active resource unit and enter your access code to view and update emergency tasks.
+            </p>
+          </div>
+
+          <form onSubmit={handleLoginSubmit} className="space-y-4">
+            {loginError && (
+              <div className="p-3 bg-red-950/80 border border-red-800 text-red-300 text-xs rounded-button flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <span>{loginError}</span>
+              </div>
+            )}
+
+            {/* Resource Selector with Search Filter */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
+                Select Resource Unit
+              </label>
+
+              <div className="relative mb-2">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-500" />
+                <input
+                  type="text"
+                  placeholder="Filter resources..."
+                  value={loginSearchQuery}
+                  onChange={(e) => setLoginSearchQuery(e.target.value)}
+                  className="w-full bg-slate-950 text-slate-200 text-xs border border-slate-800 rounded-button pl-9 pr-3 py-2 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <select
+                value={loginResourceId}
+                onChange={(e) => setLoginResourceId(e.target.value)}
+                className="w-full bg-slate-950 text-emerald-400 text-xs font-bold border border-slate-800 rounded-button px-3 py-2.5 focus:outline-none focus:border-emerald-500 cursor-pointer"
+              >
+                {filteredResources.length === 0 ? (
+                  <option value="">No matching resources found</option>
+                ) : (
+                  filteredResources.map((res) => (
+                    <option key={res.id} value={res.id}>
+                      {res.name} ({res.type})
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+
+            {/* Access Code Input */}
+            <div className="space-y-1.5 pt-1">
+              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+                <span>Access Code</span>
+                <KeyRound className="w-3.5 h-3.5 text-slate-400" />
+              </label>
+              <input
+                type="password"
+                placeholder="Enter resource access code"
+                value={loginAccessCode}
+                onChange={(e) => setLoginAccessCode(e.target.value)}
+                className="w-full bg-slate-950 text-slate-100 text-xs font-mono border border-slate-800 rounded-button px-3 py-2.5 focus:outline-none focus:border-emerald-500 placeholder:text-slate-600"
+              />
+            </div>
+
+            <Button
+              variant="primary"
+              size="md"
+              type="submit"
+              className="w-full font-bold pt-2.5 pb-2.5 mt-2"
+              icon={<Lock className="w-4 h-4" />}
+            >
+              Authenticate & Access Portal
+            </Button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  const activeResource = resources.find((r) => r.id === authenticatedResourceId);
 
   return (
     <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6 bg-background min-h-screen text-slate-100 font-sans">
@@ -189,23 +381,27 @@ function TeamDashboardContent() {
           </p>
         </div>
 
-        {/* Resource Picker */}
-        <div className="bg-surface-primary border border-[var(--border-primary)] p-2.5 rounded-card flex items-center gap-2">
-          <label className="text-xs font-semibold text-slate-300 whitespace-nowrap">
-            Active Unit:
-          </label>
-          <select
-            value={selectedResourceId}
-            onChange={(e) => setSelectedResourceId(e.target.value)}
-            className="bg-slate-950 text-emerald-400 text-xs font-bold border border-slate-800 rounded-button px-3 py-1.5 focus:outline-none focus:border-emerald-500 cursor-pointer"
+        {/* Authenticated Resource Unit Scoped View & Log Out */}
+        <div className="flex items-center gap-3">
+          <div className="bg-surface-primary border border-[var(--border-primary)] px-3 py-2 rounded-card flex items-center gap-2">
+            <Lock className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span className="text-xs font-semibold text-slate-400 whitespace-nowrap">
+              Active Unit:
+            </span>
+            <span className="text-xs font-extrabold text-emerald-400 whitespace-nowrap">
+              {activeResource ? activeResource.name : authenticatedResourceId || "Authenticated"}
+            </span>
+          </div>
+
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleLogout}
+            icon={<LogOut className="w-3.5 h-3.5 text-red-400" />}
+            className="border-slate-800 hover:border-red-800 text-slate-300 hover:text-red-400"
           >
-            <option value="">All Field Dispatches</option>
-            {resources.map((res) => (
-              <option key={res.id} value={res.id}>
-                {res.name} ({res.type})
-              </option>
-            ))}
-          </select>
+            Log out
+          </Button>
         </div>
       </header>
 
